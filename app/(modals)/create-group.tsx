@@ -543,7 +543,7 @@ export default function CreateGroup() {
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["top"]} testID="create-group-invite-screen">
         <ScreenHeader title="Invite members" onBack={() => setShowInvite(false)} />
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 22, marginBottom: 24 }}>
                 Invite people to {groupName} by phone number. They&apos;ll get an SMS and see the invite in their app.
@@ -606,7 +606,7 @@ export default function CreateGroup() {
                 </Text>
               </View>
 
-              <View style={{ flex: 1, minHeight: 24 }} />
+              <View style={{ flexGrow: 1, minHeight: 24 }} />
               <Button
                 label="Done, go to dashboard"
                 onPress={() => router.replace(`/group/${newGroupId}`)}
@@ -717,7 +717,7 @@ export default function CreateGroup() {
       </View>
 
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <ScrollView ref={scrollRef} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
             {/* ─── STEP 1 — Group Basics ──────────────────────────────────────── */}
@@ -754,8 +754,8 @@ export default function CreateGroup() {
                 {isProjectFund ? (
                   <Text style={[styles.fieldHint, { color: colors.textMuted, marginTop: 8 }]}>
                     Members give what they choose, whenever they choose, toward a project you
-                    name — so there is no set amount, no deadline, no late penalty, no loans
-                    and no share-out. You&apos;ll add the first project next.
+                    name. There is no set amount, no deadline, no late penalty, no loans and no
+                    share-out. You&apos;ll add the first project next.
                   </Text>
                 ) : groupType && !lendingAvailable ? (
                   <Text style={[styles.fieldHint, { color: colors.textMuted, marginTop: 8 }]}>
@@ -798,7 +798,6 @@ export default function CreateGroup() {
                 <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 22, marginBottom: 20 }}>
                   Name what the group is raising money for. Members pick one of these every
                   time they give, so the money is always traceable to what it was given for.
-                  Add at least one now — you can add more later.
                 </Text>
 
                 {projects.map((p, i) => {
@@ -836,6 +835,7 @@ export default function CreateGroup() {
                       <View
                         style={[
                           styles.amountWrap,
+                          styles.amountWrapCompact,
                           {
                             backgroundColor: colors.surface,
                             borderColor: err ? colors.danger : colors.border,
@@ -843,9 +843,9 @@ export default function CreateGroup() {
                           },
                         ]}
                       >
-                        <Text style={[styles.currency, { color: colors.primary }]}>K</Text>
+                        <Text style={[styles.currencyCompact, { color: colors.primary }]}>K</Text>
                         <TextInput
-                          style={[styles.amountInput, { color: colors.textMain }]}
+                          style={[styles.amountInputCompact, { color: colors.textMain }]}
                           value={p.target}
                           onChangeText={(t) =>
                             handleNumericInput(t, (v) => updateProject(p.key, { target: v }))
@@ -884,11 +884,14 @@ export default function CreateGroup() {
                   </Pressable>
                 )}
 
-                <View style={[styles.infoNote, { backgroundColor: colors.primarySoft }]}>
-                  <Text style={{ color: colors.primary, fontSize: 13, lineHeight: 20 }}>
-                    After the group is created, only the Chairperson can open a new project.
-                  </Text>
-                </View>
+                <Text
+                  style={[
+                    styles.fieldHint,
+                    { color: colors.textMuted, marginTop: 10, textAlign: "center" },
+                  ]}
+                >
+                  You can add more projects later.
+                </Text>
               </>
             )}
 
@@ -1446,7 +1449,7 @@ export default function CreateGroup() {
                   </Text>
                 </Pressable>
 
-                <View style={{ flex: 1, minHeight: 24 }} />
+                <View style={{ flexGrow: 1, minHeight: 24 }} />
                 <Button
                   label="Continue to payment"
                   disabled={!termsAccepted}
@@ -1539,7 +1542,7 @@ export default function CreateGroup() {
             {/* Continue button for steps 1–4 */}
             {step >= 1 && step <= 4 && (
               <>
-                <View style={{ flex: 1, minHeight: 24 }} />
+                <View style={{ flexGrow: 1, minHeight: 24 }} />
                 <Button
                   label="Continue"
                   onPress={handleNext}
@@ -1703,6 +1706,9 @@ const styles = StyleSheet.create({
   },
   currency: { fontSize: 24, fontWeight: "700" },
   amountInput: { flex: 1, fontSize: 36, fontWeight: "700", letterSpacing: -0.8, padding: 0 },
+  amountWrapCompact: { borderRadius: 14, paddingVertical: 14, paddingHorizontal: 16, gap: 8 },
+  currencyCompact: { fontSize: 15, fontWeight: "700" },
+  amountInputCompact: { flex: 1, fontSize: 15, fontWeight: "500", padding: 0 },
   inputRow: {
     flexDirection: "row",
     alignItems: "center",

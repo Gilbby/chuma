@@ -85,11 +85,23 @@ type TabKey =
   | "reports"
   | "governance";
 
+const TAB_KEYS: TabKey[] = [
+  "members",
+  "projects",
+  "contributions",
+  "loans",
+  "approvals",
+  "reports",
+  "governance",
+];
+
 export default function GroupDetails() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tab: tabParam } = useLocalSearchParams<{ id: string; tab?: string }>();
   const { colors } = useTheme();
   const router = useRouter();
-  const [tab, setTab] = useState<TabKey>("members");
+  const [rawTab, setTab] = useState<TabKey>(
+    TAB_KEYS.includes(tabParam as TabKey) ? (tabParam as TabKey) : "members"
+  );
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -364,6 +376,15 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
   // Opening a project decides what members' money can be given toward, so it
   // is the Chairperson's call — the API enforces the same.
   const canAddProject = isProjectFund && effectiveRole === "Chairperson";
+
+  // A tab arriving in the URL can name one this group's type does not offer:
+  // "projects" belongs to a project fund, "loans" to everything else. Falling
+  // back here beats rendering a body with no matching tab in the bar.
+  const tab: TabKey =
+    (rawTab === "projects" && !isProjectFund) ||
+    (rawTab === "loans" && isProjectFund)
+      ? "members"
+      : rawTab;
 
   const paidCount = cycleStatus.filter((c) => c.status === "paid").length;
   const overdueCount = cycleStatus.filter((c) => c.status === "overdue").length;

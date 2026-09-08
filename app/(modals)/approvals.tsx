@@ -235,8 +235,11 @@ export default function Approvals() {
 
               {isReceipt ? (
                 <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 14, lineHeight: 16 }}>
-                  One admin confirms this: whoever is holding the cash. Nothing
-                  is credited to them until you do.
+                  {a.confirmerRole === "Treasurer"
+                    ? "The treasurer confirms this — they hold the group's cash. Nothing is credited until they do."
+                    : a.confirmerRole === "Chairperson"
+                      ? "This group has no treasurer, so the chairperson confirms it. Nothing is credited until they do."
+                      : "One admin confirms this: whoever is holding the cash. Nothing is credited until they do."}
                 </Text>
               ) : (
                 <View style={{ marginTop: 14 }}>

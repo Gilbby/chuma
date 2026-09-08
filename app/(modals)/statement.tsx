@@ -12,12 +12,19 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { ScreenHeader, ErrorState, ExportSheet } from "@/src/components/common";
 import { Card } from "@/src/components/ui/Card";
+import { ProgressBar } from "@/src/components/ui/ProgressBar";
 import { Button } from "@/src/components/ui/Button";
 import { SkeletonGroup } from "@/src/components/ui";
 import { getGroups } from "@/src/services/groups";
-import { getStatement, Statement, StatementPurpose } from "@/src/services/statement";
+import {
+  getStatement,
+  Statement,
+  StatementProject,
+  StatementPurpose,
+} from "@/src/services/statement";
 import { exportStatementPdf, exportStatementCsv } from "@/src/utils/exports";
 import { formatZMW } from "@/src/utils/currency";
+import { statementCopy, statementFlavourFor } from "@/src/utils/statementCopy";
 import { Group } from "@/src/types";
 import { Download, Calendar, ChevronDown, Check } from "lucide-react-native";
 import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
@@ -110,9 +117,18 @@ export default function StatementScreen() {
 
   useAsyncEffect(load);
 
-  const groupLabel = groupId
-    ? groups.find((g) => g.id === groupId)?.name ?? "Selected group"
-    : "All groups";
+  const scopedGroup = groupId ? groups.find((g) => g.id === groupId) : undefined;
+  const groupLabel = groupId ? scopedGroup?.name ?? "Selected group" : "All groups";
+
+  // A church group's money is given, not saved. Same figures, different words —
+  // see statementCopy. Scoped to one group it follows that group; across all of
+  // them only an all-project-fund member gets the giving wording.
+  const flavour = statementFlavourFor(
+    groupId
+      ? [statement?.group?.groupType ?? scopedGroup?.groupType]
+      : groups.map((g) => g.groupType)
+  );
+  const copy = statementCopy(flavour);
   const periodLabel = `${fmtDay(range.from)} – ${fmtDay(range.to)}`;
 
   const choosePreset = (key: PresetKey) => {
@@ -142,6 +158,10 @@ export default function StatementScreen() {
   };
 
   const months = useMemo(() => recentMonths(), []);
+
+  // Per-project giving. A savings group returns none, and an API predating the
+  // field returns nothing at all — both mean "no project section".
+  const projectRows = statement?.projects ?? [];
 
   return (
     <SafeAreaView
@@ -233,7 +253,9 @@ export default function StatementScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {/* Balance summary */}
           <Card padding={18} testID="statement-summary">
-            <Text style={[styles.eyebrow, { color: colors.textMuted }]}>CLOSING SAVINGS BALANCE</Text>
+            <Text style={[styles.eyebrow, { color: colors.textMuted }]}>
+              {copy.balanceLabel.toUpperCase()}
+            </Text>
             <Text style={[styles.balance, { color: colors.textMain }]}>
               {formatZMW(statement.closingBalance)}
             </Text>
@@ -245,36 +267,38 @@ export default function StatementScreen() {
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
             <SummaryRow
-              k="Opening balance"
+              k={copy.openingLabel}
               v={formatZMW(statement.openingBalance)}
               colors={colors}
             />
             <SummaryRow
-              k="Contributions"
+              k={copy.inLabel}
               v={`+${formatZMW(statement.savingsIn)}`}
               tint={colors.success}
               colors={colors}
             />
+            {copy.outLabel ? (
+              <SummaryRow
+                k={copy.outLabel}
+                v={`−${formatZMW(statement.savingsOut)}`}
+                tint={statement.savingsOut > 0 ? colors.danger : undefined}
+                colors={colors}
+              />
+            ) : null}
             <SummaryRow
-              k="Share-out paid"
-              v={`−${formatZMW(statement.savingsOut)}`}
-              tint={statement.savingsOut > 0 ? colors.danger : undefined}
-              colors={colors}
-            />
-            <SummaryRow
-              k="Closing balance"
+              k={copy.closingLabel}
               v={formatZMW(statement.closingBalance)}
               bold
               colors={colors}
             />
           </Card>
 
-          {/* Savings ledger — the running-balance account */}
-          <SectionTitle colors={colors}>SAVINGS ACCOUNT</SectionTitle>
+          {/* The running-balance account: savings for most, giving for a fund */}
+          <SectionTitle colors={colors}>{copy.ledgerTitle.toUpperCase()}</SectionTitle>
           <Card padding={0}>
             <LedgerRow
               date={fmtShort(statement.period.from)}
-              title="Opening balance"
+              title={copy.ledgerOpeningRow}
               amount={null}
               balance={statement.openingBalance}
               colors={colors}
@@ -283,7 +307,7 @@ export default function StatementScreen() {
             {statement.lines.length === 0 ? (
               <View style={{ padding: 16 }}>
                 <Text style={{ color: colors.textMuted, fontSize: 13 }}>
-                  No savings movement in this period.
+                  {copy.ledgerEmpty}
                 </Text>
               </View>
             ) : (
@@ -319,7 +343,7 @@ export default function StatementScreen() {
             )}
             <LedgerRow
               date={fmtShort(statement.period.to)}
-              title="Closing balance"
+              title={copy.ledgerClosingRow}
               amount={null}
               balance={statement.closingBalance}
               colors={colors}
@@ -327,6 +351,28 @@ export default function StatementScreen() {
               last
             />
           </Card>
+
+          {/* What the giving was FOR. Only a project fund returns rows, so the
+              section is present or absent rather than empty. */}
+          {projectRows.length > 0 && (
+            <>
+              <SectionTitle colors={colors}>
+                {copy.projectsTitle.toUpperCase()}
+              </SectionTitle>
+              <Card padding={0} testID="statement-projects">
+                {projectRows.map((p, i) => (
+                  <ProjectRow
+                    key={`${p.groupId}:${p.projectId ?? "general"}`}
+                    project={p}
+                    amountLabel={copy.projectsAmountLabel}
+                    showGroup={!statement.group}
+                    colors={colors}
+                    last={i === projectRows.length - 1}
+                  />
+                ))}
+              </Card>
+            </>
+          )}
 
           {/* Everything else that moved money in the period */}
           <SectionTitle colors={colors}>ALL ACTIVITY</SectionTitle>
@@ -426,9 +472,7 @@ export default function StatementScreen() {
 
           <Text style={[styles.note, { color: colors.textMuted }]}>
             Statement no. {statement.statementId} · issued {fmtDay(statement.generatedAt)}.
-            {"\n"}Your savings balance counts contributions and share-outs only. Loans,
-            repayments, penalties and fees are real money, so they are w above —
-            they just do not change your stake.
+            {"\n"}{copy.footnote}
           </Text>
         </ScrollView>
       )}
@@ -440,8 +484,8 @@ export default function StatementScreen() {
         subtitle={periodLabel}
         pdfHint="Bank-style statement, ready to print or share"
         csvHint="Spreadsheet format, opens in Excel or Sheets"
-        onPdf={() => statement && exportStatementPdf(statement)}
-        onCsv={() => statement && exportStatementCsv(statement)}
+        onPdf={() => statement && exportStatementPdf(statement, flavour)}
+        onCsv={() => statement && exportStatementCsv(statement, flavour)}
       />
 
       {/* Group scope picker */}
@@ -550,6 +594,63 @@ const SectionTitle: React.FC<{ children: React.ReactNode; colors: Colors }> = ({
   children,
   colors,
 }) => <Text style={[styles.section, { color: colors.textMuted }]}>{children}</Text>;
+
+/**
+ * One project a member gave toward: what they gave, and how the project itself
+ * is doing. The bar is the GROUP's progress, not this member's share of it —
+ * a member giving K200 to a K50,000 building fund should see the building fund,
+ * not a bar stuck at nothing.
+ */
+const ProjectRow: React.FC<{
+  project: StatementProject;
+  amountLabel: string;
+  showGroup: boolean;
+  colors: Colors;
+  last?: boolean;
+}> = ({ project, amountLabel, showGroup, colors, last }) => {
+  const target = project.targetAmount ?? 0;
+  const progress = target > 0 ? Math.min(1, project.collected / target) : null;
+  return (
+    <View
+      style={[
+        styles.projectRow,
+        !last && { borderBottomWidth: 1, borderBottomColor: colors.border },
+      ]}
+    >
+      <View style={styles.rowBetween}>
+        <Text
+          style={{ color: colors.textMain, fontWeight: "700", fontSize: 13, flex: 1 }}
+          numberOfLines={1}
+        >
+          {project.name}
+        </Text>
+        <Text style={{ color: colors.success, fontWeight: "700", fontSize: 13, marginLeft: 12 }}>
+          +{formatZMW(project.amount)}
+        </Text>
+      </View>
+
+      <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>
+        {amountLabel} · {project.count} {project.count === 1 ? "gift" : "gifts"}
+        {showGroup ? ` · ${project.groupName}` : ""}
+        {project.status && project.status !== "active" ? ` · ${project.status}` : ""}
+      </Text>
+
+      {progress !== null && (
+        <View style={{ marginTop: 8 }}>
+          <ProgressBar progress={progress} />
+          <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 4 }}>
+            Project raised {formatZMW(project.collected)} of {formatZMW(target)}
+          </Text>
+        </View>
+      )}
+      {progress === null && project.projectId && (
+        <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 4 }}>
+          Project raised {formatZMW(project.collected)} · no goal set
+        </Text>
+      )}
+    </View>
+  );
+};
 
 const SummaryRow: React.FC<{
   k: string;
@@ -778,6 +879,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 14,
     paddingVertical: 12,
+  },
+  projectRow: { paddingHorizontal: 14, paddingVertical: 12 },
+  rowBetween: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   note: { fontSize: 11, lineHeight: 17, marginTop: 18, textAlign: "center" },
   sheet: {

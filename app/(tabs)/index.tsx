@@ -18,8 +18,10 @@ import {
   CheckSquare,
   Gift,
   Scale,
+  Target,
   Eye,
   EyeOff,
+  type LucideIcon,
 } from "lucide-react-native";
 import { Card } from "@/src/components/ui/Card";
 import { Skeleton, SkeletonGroup } from "@/src/components/ui";
@@ -46,6 +48,14 @@ import { formatZMW } from "@/src/utils/currency";
 import { useRole } from "@/src/contexts/RoleContext";
 
 const QUICK_ICON_SIZE = 30;
+
+/** One tile in the home row. Only Approve carries a badge, hence the optional. */
+type QuickAction = {
+  label: string;
+  icon: LucideIcon;
+  route: string;
+  badge?: number;
+};
 
 function formatDueDate(iso: string): string {
   const d = new Date(iso);
@@ -280,22 +290,44 @@ export default function Home() {
   const projectFundOnly =
     groups.length > 0 && groups.every((g) => isProjectFundType(g.groupType));
 
-  const quickActions = [
-    { label: "Saving", icon: PiggyBank, route: "/contribute" },
+  // What a project fund has in place of a share-out is the projects themselves,
+  // so they take the slot Share-out leaves empty. The group screen resolves the
+  // list from the id and opens on the tab named here.
+  const projectsGroupId = groups[0]?.id;
+  const projectsRoute = projectsGroupId
+    ? `/group/${projectsGroupId}?tab=projects`
+    : "/groups";
+
+  // Repay now lives on the unified payment screen (loans show among the dues),
+  // reached from Payments — so the freed slot surfaces the account statement.
+  const statementsAction: QuickAction = { label: "Statements", icon: FileText, route: "/statement" };
+
+  // Approvers get Approve; everyone else (Members) gets Share-out in its
+  // place — or, where every group they are in gives toward projects and so
+  // never shares out, Projects instead.
+  const roleAction: QuickAction = canApprove
+    ? { label: "Approve", icon: CheckSquare, route: "/approvals", badge: pendingApprovals }
+    : projectFundOnly
+      ? { label: "Projects", icon: Target, route: projectsRoute }
+      : { label: "Share-out", icon: Gift, route: shareOutRoute };
+
+  const quickActions: QuickAction[] = [
+    // A project fund holds no savings stake — the money is given toward a
+    // project, not put aside — so the tile names the act, not the pot.
+    {
+      label: projectFundOnly ? "Contribution" : "Saving",
+      icon: PiggyBank,
+      route: "/contribute",
+    },
     savingsOnly
       ? { label: "Church", icon: Scale, route: "/governance" }
       : { label: "Loan", icon: HandCoins, route: "/loan" },
-    // Repay now lives on the unified payment screen (loans show among the dues),
-    // reached from Payments — so the freed slot surfaces the account statement.
-    { label: "Statements", icon: FileText, route: "/statement" },
-    // Approvers get Approve; everyone else (Members) gets Share-out in its
-    // place — unless every group they are in gives toward projects, which
-    // never share out at all.
-    ...(canApprove
-      ? [{ label: "Approve", icon: CheckSquare, route: "/approvals", badge: pendingApprovals }]
-      : projectFundOnly
-        ? []
-        : [{ label: "Share-out", icon: Gift, route: shareOutRoute }]),
+    // A project-fund Member came to give toward a project; the statement is the
+    // record they check afterwards. So Projects goes third for them and pushes
+    // Statements last. Every other row keeps Statements third.
+    ...(projectFundOnly && !canApprove
+      ? [roleAction, statementsAction]
+      : [statementsAction, roleAction]),
   ];
 
   return (

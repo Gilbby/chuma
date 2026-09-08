@@ -14,6 +14,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { formatZMW } from "@/src/utils/currency";
 import { TxnItem } from "@/src/types";
 import type { Statement, StatementPurpose } from "@/src/services/statement";
+import { statementCopy, type StatementFlavour } from "@/src/utils/statementCopy";
 
 /** Chuma mark, inlined so generated PDFs stay self-contained (no network). */
 export const CHUMA_LOGO_DATA_URI =
@@ -323,7 +324,11 @@ function purposeBlock(
   );
 }
 
-export async function exportStatementPdf(s: Statement) {
+export async function exportStatementPdf(
+  s: Statement,
+  flavour: StatementFlavour = "savings"
+) {
+  const copy = statementCopy(flavour);
   const detail = (groupName: string, note: string) => (s.group ? note : groupName);
 
   const ledgerRows = s.lines
@@ -391,7 +396,7 @@ export async function exportStatementPdf(s: Statement) {
         <span class="logo"><img src="${CHUMA_LOGO_DATA_URI}" style="width:22px;height:22px;" /></span>
         <span class="brand-name">Chuma</span>
       </div>
-      <div class="label">Savings statement</div>
+      <div class="label">${esc(copy.docLabel)}</div>
       <div class="period">${statementTitle(s)}</div>
       <div class="who">
         ${esc(s.member.name)} · ${esc(s.member.phone)}<br />
@@ -400,28 +405,54 @@ export async function exportStatementPdf(s: Statement) {
       </div>
     </div>
     <div class="body">
-      <h2>Savings summary</h2>
+      <h2>${esc(copy.summaryTitle)}</h2>
       <table>
         <thead><tr><th>Item</th><th class="num">Amount</th></tr></thead>
         <tbody>
-          <tr><td>Opening balance</td><td class="num">${formatZMW(s.openingBalance)}</td></tr>
-          <tr><td>Contributions</td><td class="num pos">+${formatZMW(s.savingsIn)}</td></tr>
-          <tr><td>Share-out paid</td><td class="num neg">−${formatZMW(s.savingsOut)}</td></tr>
+          <tr><td>${esc(copy.openingLabel)}</td><td class="num">${formatZMW(s.openingBalance)}</td></tr>
+          <tr><td>${esc(copy.inLabel)}</td><td class="num pos">+${formatZMW(s.savingsIn)}</td></tr>
+          ${
+            copy.outLabel
+              ? `<tr><td>${esc(copy.outLabel)}</td><td class="num neg">−${formatZMW(s.savingsOut)}</td></tr>`
+              : ""
+          }
         </tbody>
-        <tfoot><tr><td>Closing balance</td><td class="num">${formatZMW(s.closingBalance)}</td></tr></tfoot>
+        <tfoot><tr><td>${esc(copy.closingLabel)}</td><td class="num">${formatZMW(s.closingBalance)}</td></tr></tfoot>
       </table>
 
-      <h2>Savings account</h2>
+      <h2>${esc(copy.ledgerTitle)}</h2>
       <table>
         <thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th><th class="num">Balance</th></tr></thead>
         <tbody>
-          <tr><td>${fmtDate(s.period.from)}</td><td class="muted">Opening balance</td><td class="num muted">—</td><td class="num">${formatZMW(s.openingBalance)}</td></tr>
-          ${ledgerRows || `<tr><td colspan="4" class="empty">No savings movement in this period.</td></tr>`}
+          <tr><td>${fmtDate(s.period.from)}</td><td class="muted">${esc(copy.ledgerOpeningRow)}</td><td class="num muted">—</td><td class="num">${formatZMW(s.openingBalance)}</td></tr>
+          ${ledgerRows || `<tr><td colspan="4" class="empty">${esc(copy.ledgerEmpty)}</td></tr>`}
         </tbody>
-        <tfoot><tr><td colspan="3">Closing balance</td><td class="num">${formatZMW(s.closingBalance)}</td></tr></tfoot>
+        <tfoot><tr><td colspan="3">${esc(copy.ledgerClosingRow)}</td><td class="num">${formatZMW(s.closingBalance)}</td></tr></tfoot>
       </table>
 
-      <h2>All activity</h2>
+      ${
+        (s.projects ?? []).length > 0
+          ? `<h2>${esc(copy.projectsTitle)}</h2>
+      <table>
+        <thead><tr><th>Project</th><th>Group</th><th class="num">Gifts</th><th class="num">You gave</th><th class="num">Project raised</th></tr></thead>
+        <tbody>
+          ${(s.projects ?? [])
+            .map(
+              (p) => `<tr>
+            <td>${esc(p.name)}${p.status && p.status !== "active" ? ` <span class="muted">(${esc(p.status)})</span>` : ""}</td>
+            <td class="muted">${esc(p.groupName)}</td>
+            <td class="num">${p.count}</td>
+            <td class="num pos">+${formatZMW(p.amount)}</td>
+            <td class="num">${formatZMW(p.collected)}${p.targetAmount ? ` / ${formatZMW(p.targetAmount)}` : ""}</td>
+          </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+
+      `
+          : ""
+      }<h2>All activity</h2>
       <table>
         <thead><tr><th>Date</th><th>Description</th><th>Group</th><th class="num">Amount</th><th>Status</th></tr></thead>
         <tbody>${activityRows || `<tr><td colspan="5" class="empty">No transactions in this period.</td></tr>`}</tbody>
@@ -444,10 +475,7 @@ export async function exportStatementPdf(s: Statement) {
       </table>
 
       <div class="foot">
-        This is an official Chuma statement. The balance shown is your savings
-        stake in the group — contributions and share-outs only. Loans, repayments,
-        penalties and fees are real money and are itemised under Where your money
-        went; they do not change your stake.<br />
+        ${esc(copy.footnotePdf)}<br />
         Verify at chuma.app · Community Chuma, Digitally.
       </div>
     </div>
@@ -456,12 +484,16 @@ export async function exportStatementPdf(s: Statement) {
 
   await savePdf(
     html,
-    `Chuma-Statement-${new Date(s.period.from).toISOString().slice(0, 10)}`,
+    `${copy.fileStem}-${new Date(s.period.from).toISOString().slice(0, 10)}`,
     `Chuma statement · ${statementTitle(s)}`
   );
 }
 
-export async function exportStatementCsv(s: Statement) {
+export async function exportStatementCsv(
+  s: Statement,
+  flavour: StatementFlavour = "savings"
+) {
+  const copy = statementCopy(flavour);
   const day = (d: string | Date) => new Date(d).toISOString().slice(0, 10);
   const detail = (groupName: string, note: string) => (s.group ? note : groupName);
 
@@ -470,7 +502,7 @@ export async function exportStatementCsv(s: Statement) {
   // their screen; a file shaped differently reads as a different statement, and
   // the copy they hand to someone else is the one that has to agree.
   const table: (string | number)[][] = [
-    ["Chuma savings statement"],
+    [`Chuma ${copy.docLabel.toLowerCase()}`],
     ["Statement no.", s.statementId],
     ["Member", s.member.name, s.member.phone],
     ["Group", s.group ? s.group.name : "All groups"],
@@ -478,17 +510,17 @@ export async function exportStatementCsv(s: Statement) {
     ["Issued", fmtDate(s.generatedAt)],
     [],
 
-    ["Savings summary"],
+    [copy.summaryTitle],
     ["Item", "Amount"],
-    ["Opening balance", s.openingBalance],
-    ["Contributions", s.savingsIn],
-    ["Share-out paid", -s.savingsOut],
-    ["Closing balance", s.closingBalance],
+    [copy.openingLabel, s.openingBalance],
+    [copy.inLabel, s.savingsIn],
+    ...(copy.outLabel ? [[copy.outLabel, -s.savingsOut]] : []),
+    [copy.closingLabel, s.closingBalance],
     [],
 
-    ["Savings account"],
+    [copy.ledgerTitle],
     ["Date", "Description", "Detail", "Amount", "Balance"],
-    [day(s.period.from), "Opening balance", "", "", s.openingBalance],
+    [day(s.period.from), copy.ledgerOpeningRow, "", "", s.openingBalance],
     ...s.lines.map((l) => [
       day(l.date),
       l.description,
@@ -496,8 +528,24 @@ export async function exportStatementCsv(s: Statement) {
       l.delta,
       l.balance,
     ]),
-    [day(s.period.to), "Closing balance", "", "", s.closingBalance],
+    [day(s.period.to), copy.ledgerClosingRow, "", "", s.closingBalance],
     [],
+
+    ...((s.projects ?? []).length > 0
+      ? [
+          [copy.projectsTitle],
+          ["Project", "Group", "Gifts", "You gave", "Project raised", "Goal"],
+          ...(s.projects ?? []).map((p) => [
+            p.name,
+            p.groupName,
+            p.count,
+            p.amount,
+            p.collected,
+            p.targetAmount ?? "",
+          ]),
+          [],
+        ]
+      : []),
 
     ["All activity"],
     ["Date", "Description", "Group", "Amount", "Status"],
@@ -527,7 +575,7 @@ export async function exportStatementCsv(s: Statement) {
     .join("\n");
   await saveCsv(
     csv,
-    `Chuma-Statement-${new Date(s.period.from).toISOString().slice(0, 10)}`,
+    `${copy.fileStem}-${new Date(s.period.from).toISOString().slice(0, 10)}`,
     "Save your statement"
   );
 }

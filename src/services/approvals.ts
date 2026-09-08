@@ -31,6 +31,9 @@ function mapApproval(raw: any): Approval {
     totalVoters: raw.requiredApprovals ?? 0,
     timestamp: raw.createdAt ?? raw.date ?? "",
     status: raw.status,
+    // cash-receipt only, and only on receipts raised since the API started
+    // recording it — the screen falls back to neutral wording without it.
+    confirmerRole: raw.confirmerRole,
     votes: votes.map((v: any) => ({
       // Carried through so a screen can ask "did I vote on this?" — the name
       // alone cannot answer that in a group with two Marys.

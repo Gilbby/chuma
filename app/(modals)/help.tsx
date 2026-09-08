@@ -7,8 +7,6 @@ import {
   StyleSheet,
   Linking,
   LayoutAnimation,
-  Platform,
-  UIManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ScreenHeader } from "@/src/components/common/ScreenHeader";
@@ -20,10 +18,6 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react-native";
-
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const FAQS = [
   {

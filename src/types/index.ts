@@ -215,6 +215,11 @@ export interface Approval {
   // "executed" = approved AND its action has run (a refund paid, a share-out
   // distributed). An approved-but-not-executed action can be run again.
   status: "pending" | "approved" | "rejected" | "executed";
+  /** cash-receipt only: whose duty this receipt is. The treasurer, who keeps
+   *  the cash box — and the chairperson only when the group has no treasurer.
+   *  Any admin may still confirm it; this is who it was addressed to. Absent on
+   *  receipts raised before the role was recorded. */
+  confirmerRole?: "Treasurer" | "Chairperson";
   /** Who a member-removal is about — they never vote on their own removal. */
   targetUserId?: string;
   targetName?: string;

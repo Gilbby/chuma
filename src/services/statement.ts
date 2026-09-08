@@ -7,6 +7,7 @@
 // their own money-in/money-out totals. See chuma-api statement.service.js.
 
 import { api } from "./apiClient";
+import type { GroupType } from "@/src/types";
 
 export type StatementTxnType =
   | "contribution"
@@ -59,12 +60,36 @@ export interface StatementPurpose {
   count: number;
 }
 
+/**
+ * One project a member gave toward in the period.
+ *
+ * Only project-fund groups produce these — a savings contribution buys a stake,
+ * not a project — so an empty array is the normal case and is what the client
+ * keys the whole section off. `amount` is what THIS member gave; `collected`
+ * and `targetAmount` are the group's progress, shown beside it for context.
+ *
+ * Giving that names no project (made before the group opened one, or to a
+ * project since archived) arrives as a single "General giving" row with a null
+ * `projectId`, so the rows still sum to `savingsIn`.
+ */
+export interface StatementProject {
+  projectId: string | null;
+  name: string;
+  groupId: string;
+  groupName: string;
+  targetAmount: number | null;
+  collected: number;
+  status: "active" | "completed" | "archived" | null;
+  amount: number;
+  count: number;
+}
+
 export interface Statement {
   statementId: string;
   generatedAt: string;
   period: { from: string; to: string };
   member: { name: string; phone: string };
-  group: { id: string; name: string; role: string } | null;
+  group: { id: string; name: string; groupType?: GroupType; role: string } | null;
   openingBalance: number;
   closingBalance: number;
   savingsIn: number;
@@ -76,6 +101,8 @@ export interface Statement {
     pending: number;
     byType: Record<string, { count: number; in: number; out: number }>;
   };
+  /** Per-project giving. Empty for savings groups; absent on an older API. */
+  projects?: StatementProject[];
   /** Optional: absent when talking to an API older than the breakdown. */
   breakdown?: {
     in: StatementPurpose[];
