@@ -25,6 +25,10 @@ export interface StatementLine {
   type: StatementTxnType;
   groupName: string;
   description: string;
+  /** Project-fund groups only: the project this paid into, "General giving"
+   *  when it named none, suffixed "+ other" when the payment also settled a
+   *  penalty or a repayment. null elsewhere; absent on an older API. */
+  projectLabel?: string | null;
   note: string;
   delta: number; // signed savings movement
   balance: number; // running savings balance after this line
@@ -38,6 +42,8 @@ export interface StatementActivity {
   type: StatementTxnType;
   groupName: string;
   description: string;
+  /** See StatementLine.projectLabel. */
+  projectLabel?: string | null;
   note: string;
   amount: number; // absolute
   direction: "in" | "out";

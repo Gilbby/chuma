@@ -48,6 +48,11 @@ import {
 } from "@/src/constants";
 import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
+// What giving that names no project is called. The API labels these the same
+// way on the statement (see statement.service.js), so the picker, the receipt
+// and the statement all call the one thing by the one name.
+const GENERAL_GIVING_LABEL = "General giving";
+
 type Step = "entry" | "confirm" | "success";
 type LoanMode = "installment" | "full" | "custom";
 
@@ -178,10 +183,10 @@ export default function Contribute() {
     (p) => p.status === "active"
   );
   // Derived, not stored: a selection left over from the group they switched
-  // away from matches nothing here, and a lone open project needs no choosing.
-  const selectedProject =
-    openProjects.find((p) => p.id === projectId) ??
-    (openProjects.length === 1 ? openProjects[0] : null);
+  // away from matches nothing here. Nothing is picked for them either — an
+  // untouched picker means general giving, which is a real destination (it
+  // reads as "General giving" on the statement), not a missing answer.
+  const selectedProject = openProjects.find((p) => p.id === projectId) ?? null;
 
   // ── Amounts ─────────────────────────────────────────────────────────────────
   // A project-fund group has no cycle amount: whatever they type IS the gift.
@@ -250,9 +255,6 @@ export default function Contribute() {
   // A loan in custom mode with no/zero amount would be an invalid obligation.
   const invalidLoan = loans.some((l) => loanChosen(l) <= 0);
   const belowBase = base > 0 && num > 0 && num < base;
-  // Nothing is given into an untagged pool: the API refuses a project-fund
-  // payment with no project, so the screen refuses it first.
-  const missingProject = isProjectFund && !selectedProject;
   const displayError =
     submitAttempted && num <= 0
       ? "Enter an amount to pay"
@@ -260,9 +262,7 @@ export default function Contribute() {
         ? `Minimum ${formatZMW(base)}: this covers your dues`
         : invalidLoan
           ? "Enter an amount for each loan"
-          : submitAttempted && missingProject
-            ? "Choose what you're giving toward"
-            : "";
+          : "";
 
   // The savings leg the API is sent. A project-fund gift is the whole amount as
   // a contribution — there is no cycle due for it to be a "top-up" above.
@@ -279,7 +279,7 @@ export default function Contribute() {
   // is no fee preview to fetch — mirror how the treasurer-confirmed cash path
   // priced nothing. Mobile money fetches the real server breakdown first.
   const goToConfirm = async () => {
-    if (num <= 0 || belowBase || invalidLoan || missingProject) {
+    if (num <= 0 || belowBase || invalidLoan) {
       setSubmitAttempted(true);
       return;
     }
@@ -408,21 +408,46 @@ export default function Contribute() {
                     {openProjects.length === 0 ? (
                       <Card padding={16}>
                         <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
-                          {selectedGroup.name} has no open projects right now. The Chairperson
-                          adds them from the group screen.
+                          {selectedGroup.name} has no open projects right now, so this goes in
+                          as general giving. The Chairperson adds projects from the group
+                          screen.
                         </Text>
                       </Card>
                     ) : (
                       <>
                         <Picker
                           label="Project"
-                          value={selectedProject?.name ?? "Choose a project"}
+                          value={selectedProject?.name ?? GENERAL_GIVING_LABEL}
                           onPress={() => setShowProjectPicker((s) => !s)}
                           colors={colors}
                           testID="contribute-project-picker"
                         />
                         {showProjectPicker && (
                           <Card padding={4} style={{ marginTop: 8 }}>
+                            {/* Sits above the projects because it is the
+                                default: a member who opens the picker and
+                                names nothing still gives, untagged. */}
+                            <Pressable
+                              onPress={() => {
+                                setProjectId(null);
+                                setShowProjectPicker(false);
+                              }}
+                              style={({ pressed }) => [
+                                styles.option,
+                                { backgroundColor: pressed ? colors.surfaceSecondary : "transparent" },
+                              ]}
+                              testID="contribute-project-general"
+                            >
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ color: colors.textMain, fontWeight: "500" }}>
+                                  {GENERAL_GIVING_LABEL}
+                                </Text>
+                                <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>
+                                  Not tied to a project
+                                </Text>
+                              </View>
+                              {!selectedProject && <Check size={18} color={colors.primary} />}
+                            </Pressable>
                             {openProjects.map((p) => (
                               <Pressable
                                 key={p.id}
@@ -453,6 +478,19 @@ export default function Contribute() {
                             ))}
                           </Card>
                         )}
+                        {!selectedProject ? (
+                          <Text
+                            style={{
+                              color: colors.textMuted,
+                              fontSize: 12,
+                              marginTop: 8,
+                              lineHeight: 18,
+                            }}
+                          >
+                            Goes to the group, not to any one project. Pick a project above to
+                            put it toward something named.
+                          </Text>
+                        ) : null}
                         {selectedProject?.targetAmount ? (
                           <View style={{ marginTop: 12 }}>
                             <ProgressBar
@@ -751,7 +789,6 @@ export default function Contribute() {
                     num <= 0 ||
                     belowBase ||
                     invalidLoan ||
-                    missingProject ||
                     networkUnknown ||
                     pricingLoading ||
                     obligationsLoading
@@ -769,9 +806,9 @@ export default function Contribute() {
                   </Text>
                   <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-                  {isProjectFund && selectedProject && (
+                  {isProjectFund && (
                     <ConfirmRow
-                      label={`Giving toward ${selectedProject.name}`}
+                      label={`Giving toward ${selectedProject?.name ?? GENERAL_GIVING_LABEL.toLowerCase()}`}
                       value={formatZMW(num)}
                       colors={colors}
                     />

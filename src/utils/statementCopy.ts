@@ -11,10 +11,25 @@
 // type means adding a flavour below, not hunting for strings in three files.
 
 import { GroupType, isProjectFundType } from "@/src/types";
+import type { StatementTxnType } from "@/src/services/statement";
 
 export type StatementFlavour = "savings" | "project-fund";
 
 export interface StatementCopy {
+  /**
+   * How much of the account a statement shows.
+   *
+   * "full" keeps the running-balance ledger and the cash breakdown: a saver
+   * holds a stake, and a stake is a figure they are entitled to see reconciled
+   * line by line. "brief" drops both and leaves the totals card followed by an
+   * activity list — a giver has no stake to reconcile, so a ledger of one
+   * column of gifts is ceremony, and the detail behind any single gift belongs
+   * on its receipt rather than on a screen read standing up.
+   *
+   * The exports stay full either way: a document handed to someone else is
+   * read at a desk, and the itemisation is the reason it exists.
+   */
+  detail: "full" | "brief";
   /** Cover label on the PDF and the first line of the CSV. */
   docLabel: string;
   /** Big figure at the top of the screen; the screen upper-cases it. */
@@ -29,6 +44,14 @@ export interface StatementCopy {
   closingLabel: string;
   ledgerTitle: string;
   ledgerEmpty: string;
+  /** Heading over the movement list. */
+  activityTitle: string;
+  /**
+   * What to call a movement, where the API's own wording is written for a
+   * savings group. Only the types that actually read wrong need an entry;
+   * everything else falls through to the description the API sent.
+   */
+  activityLabels: Partial<Record<StatementTxnType, string>>;
   /** Heading over the per-project rows. Only a flavour with projects uses it. */
   projectsTitle: string;
   /** Column heading for what this member gave to each project. */
@@ -45,6 +68,7 @@ export interface StatementCopy {
 
 const COPY: Record<StatementFlavour, StatementCopy> = {
   savings: {
+    detail: "full",
     docLabel: "Savings statement",
     balanceLabel: "Closing savings balance",
     summaryTitle: "Savings summary",
@@ -54,6 +78,9 @@ const COPY: Record<StatementFlavour, StatementCopy> = {
     closingLabel: "Closing balance",
     ledgerTitle: "Savings account",
     ledgerEmpty: "No savings movement in this period.",
+    activityTitle: "All activity",
+    // The API already words these for a savings group.
+    activityLabels: {},
     // A savings group has no projects, so these never render.
     projectsTitle: "Projects",
     projectsAmountLabel: "You gave",
@@ -66,6 +93,7 @@ const COPY: Record<StatementFlavour, StatementCopy> = {
     fileStem: "Chuma-Statement",
   },
   "project-fund": {
+    detail: "brief",
     docLabel: "Giving statement",
     balanceLabel: "Total given",
     summaryTitle: "Giving summary",
@@ -76,12 +104,21 @@ const COPY: Record<StatementFlavour, StatementCopy> = {
     closingLabel: "Total given",
     ledgerTitle: "Giving record",
     ledgerEmpty: "No giving in this period.",
+    activityTitle: "Activity",
+    activityLabels: {
+      // "Cycle contribution" is a savings group's word for it, and a member
+      // reading a lump payment does not need to be told which internal type
+      // produced it. A combined payment is not all giving, so it is not called
+      // giving.
+      contribution: "Giving",
+      combined: "Payment",
+    },
     projectsTitle: "What you gave toward",
     projectsAmountLabel: "You gave",
     ledgerOpeningRow: "Brought forward",
     ledgerClosingRow: "Total given",
     footnote:
-      "This total is what you have given, not a balance you can draw on — a project fund is never shared out. Fees are real money, so they are shown above, but they do not count as giving.",
+      "This total is what you have given, not a balance you can draw on — a project fund is never shared out. Fees and penalties show in your activity, but they do not count as giving. Tap any line for its receipt.",
     footnotePdf:
       "This is an official Chuma statement. The total shown is what this member has given toward the group's projects. A project fund is not repaid and is never shared out, so nothing here is a claim on the group. Fees are real money and are itemised under Where your money went; they do not count as giving.",
     fileStem: "Chuma-Giving-Statement",
@@ -89,6 +126,30 @@ const COPY: Record<StatementFlavour, StatementCopy> = {
 };
 
 export const statementCopy = (flavour: StatementFlavour): StatementCopy => COPY[flavour];
+
+/**
+ * What one movement is called on this kind of statement.
+ *
+ * The project it paid into wins whenever the API supplies one: a church member
+ * gave to a named thing, and "Church building" is the only label that answers
+ * the question they opened the statement to ask. Below that sits the per-type
+ * wording, and below that the description the API sent — which is already the
+ * right one for a savings group.
+ *
+ * Screen and exports both go through here, so the line a member taps and the
+ * line they hand to someone else carry the same name.
+ */
+export const movementLabel = (
+  copy: StatementCopy,
+  movement: {
+    type: StatementTxnType;
+    description: string;
+    projectLabel?: string | null;
+  }
+): string =>
+  movement.projectLabel ??
+  copy.activityLabels[movement.type] ??
+  movement.description;
 
 /**
  * Which wording a statement should use.

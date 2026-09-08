@@ -14,7 +14,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { formatZMW } from "@/src/utils/currency";
 import { TxnItem } from "@/src/types";
 import type { Statement, StatementPurpose } from "@/src/services/statement";
-import { statementCopy, type StatementFlavour } from "@/src/utils/statementCopy";
+import {
+  movementLabel,
+  statementCopy,
+  type StatementFlavour,
+} from "@/src/utils/statementCopy";
 
 /** Chuma mark, inlined so generated PDFs stay self-contained (no network). */
 export const CHUMA_LOGO_DATA_URI =
@@ -336,7 +340,7 @@ export async function exportStatementPdf(
       (l) => `
         <tr>
           <td>${fmtDate(l.date)}</td>
-          <td>${esc(l.description)}${
+          <td>${esc(movementLabel(copy, l))}${
             detail(l.groupName, l.note)
               ? `<br /><span class="muted">${esc(detail(l.groupName, l.note))}</span>`
               : ""
@@ -352,7 +356,7 @@ export async function exportStatementPdf(
       (a) => `
         <tr>
           <td>${fmtDate(a.date)}</td>
-          <td>${esc(a.description)}</td>
+          <td>${esc(movementLabel(copy, a))}</td>
           <td class="muted">${esc(a.groupName)}</td>
           <td class="num ${a.direction === "out" ? "neg" : "pos"}">${a.direction === "out" ? "−" : "+"}${formatZMW(a.amount)}</td>
           <td style="text-transform:capitalize">${esc(a.status)}</td>
@@ -452,7 +456,7 @@ export async function exportStatementPdf(
 
       `
           : ""
-      }<h2>All activity</h2>
+      }<h2>${esc(copy.activityTitle)}</h2>
       <table>
         <thead><tr><th>Date</th><th>Description</th><th>Group</th><th class="num">Amount</th><th>Status</th></tr></thead>
         <tbody>${activityRows || `<tr><td colspan="5" class="empty">No transactions in this period.</td></tr>`}</tbody>
@@ -523,7 +527,7 @@ export async function exportStatementCsv(
     [day(s.period.from), copy.ledgerOpeningRow, "", "", s.openingBalance],
     ...s.lines.map((l) => [
       day(l.date),
-      l.description,
+      movementLabel(copy, l),
       detail(l.groupName, l.note),
       l.delta,
       l.balance,
@@ -547,11 +551,11 @@ export async function exportStatementCsv(
         ]
       : []),
 
-    ["All activity"],
+    [copy.activityTitle],
     ["Date", "Description", "Group", "Amount", "Status"],
     ...s.activity.map((a) => [
       day(a.date),
-      a.description,
+      movementLabel(copy, a),
       a.groupName,
       a.direction === "out" ? -a.amount : a.amount,
       a.status,

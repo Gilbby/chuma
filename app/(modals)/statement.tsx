@@ -12,21 +12,20 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { ScreenHeader, ErrorState, ExportSheet } from "@/src/components/common";
 import { Card } from "@/src/components/ui/Card";
-import { ProgressBar } from "@/src/components/ui/ProgressBar";
 import { Button } from "@/src/components/ui/Button";
 import { SkeletonGroup } from "@/src/components/ui";
 import { getGroups } from "@/src/services/groups";
 import {
   getStatement,
   Statement,
-  StatementProject,
+  StatementActivity,
   StatementPurpose,
 } from "@/src/services/statement";
 import { exportStatementPdf, exportStatementCsv } from "@/src/utils/exports";
 import { formatZMW } from "@/src/utils/currency";
-import { statementCopy, statementFlavourFor } from "@/src/utils/statementCopy";
+import { movementLabel, statementCopy, statementFlavourFor } from "@/src/utils/statementCopy";
 import { Group } from "@/src/types";
-import { Download, Calendar, ChevronDown, Check } from "lucide-react-native";
+import { Download, Calendar, ChevronDown, ChevronRight, Check } from "lucide-react-native";
 import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 // ─── Period presets ──────────────────────────────────────────────────────────
@@ -129,6 +128,8 @@ export default function StatementScreen() {
       : groups.map((g) => g.groupType)
   );
   const copy = statementCopy(flavour);
+  // A giving statement is the totals card and then the movements, nothing else.
+  const brief = copy.detail === "brief";
   const periodLabel = `${fmtDay(range.from)} – ${fmtDay(range.to)}`;
 
   const choosePreset = (key: PresetKey) => {
@@ -158,10 +159,6 @@ export default function StatementScreen() {
   };
 
   const months = useMemo(() => recentMonths(), []);
-
-  // Per-project giving. A savings group returns none, and an API predating the
-  // field returns nothing at all — both mean "no project section".
-  const projectRows = statement?.projects ?? [];
 
   return (
     <SafeAreaView
@@ -293,89 +290,74 @@ export default function StatementScreen() {
             />
           </Card>
 
-          {/* The running-balance account: savings for most, giving for a fund */}
-          <SectionTitle colors={colors}>{copy.ledgerTitle.toUpperCase()}</SectionTitle>
-          <Card padding={0}>
-            <LedgerRow
-              date={fmtShort(statement.period.from)}
-              title={copy.ledgerOpeningRow}
-              amount={null}
-              balance={statement.openingBalance}
-              colors={colors}
-              muted
-            />
-            {statement.lines.length === 0 ? (
-              <View style={{ padding: 16 }}>
-                <Text style={{ color: colors.textMuted, fontSize: 13 }}>
-                  {copy.ledgerEmpty}
-                </Text>
-              </View>
-            ) : (
-              statement.lines.map((l) => (
-                <LedgerRow
-                  key={l.id}
-                  date={fmtShort(l.date)}
-                  title={l.description}
-                  subtitle={statement.group ? l.note : l.groupName}
-                  amount={l.delta}
-                  balance={l.balance}
-                  colors={colors}
-                  onPress={
-                    l.receiptId
-                      ? () =>
-                          router.push({
-                            pathname: "/receipt",
-                            params: {
-                              amount: String(Math.abs(l.delta)),
-                              type: l.type === "combined" ? "contribution" : l.type,
-                              group: l.groupName,
-                              date: fmtDay(l.date),
-                              note: l.note,
-                              status: l.status,
-                              direction: l.delta >= 0 ? "out" : "in",
-                              txnId: l.receiptId,
-                            },
-                          })
-                      : undefined
-                  }
-                />
-              ))
-            )}
-            <LedgerRow
-              date={fmtShort(statement.period.to)}
-              title={copy.ledgerClosingRow}
-              amount={null}
-              balance={statement.closingBalance}
-              colors={colors}
-              bold
-              last
-            />
-          </Card>
-
-          {/* What the giving was FOR. Only a project fund returns rows, so the
-              section is present or absent rather than empty. */}
-          {projectRows.length > 0 && (
+          {/* The running-balance account. A project fund has no balance to
+              run — see StatementCopy.detail — so a brief statement skips it. */}
+          {!brief && (
             <>
-              <SectionTitle colors={colors}>
-                {copy.projectsTitle.toUpperCase()}
-              </SectionTitle>
-              <Card padding={0} testID="statement-projects">
-                {projectRows.map((p, i) => (
-                  <ProjectRow
-                    key={`${p.groupId}:${p.projectId ?? "general"}`}
-                    project={p}
-                    amountLabel={copy.projectsAmountLabel}
-                    showGroup={!statement.group}
-                    colors={colors}
-                    last={i === projectRows.length - 1}
-                  />
-                ))}
+              <SectionTitle colors={colors}>{copy.ledgerTitle.toUpperCase()}</SectionTitle>
+              <Card padding={0}>
+                <LedgerRow
+                  date={fmtShort(statement.period.from)}
+                  title={copy.ledgerOpeningRow}
+                  amount={null}
+                  balance={statement.openingBalance}
+                  colors={colors}
+                  muted
+                />
+                {statement.lines.length === 0 ? (
+                  <View style={{ padding: 16 }}>
+                    <Text style={{ color: colors.textMuted, fontSize: 13 }}>
+                      {copy.ledgerEmpty}
+                    </Text>
+                  </View>
+                ) : (
+                  statement.lines.map((l) => (
+                    <LedgerRow
+                      key={l.id}
+                      date={fmtShort(l.date)}
+                      title={l.description}
+                      subtitle={statement.group ? l.note : l.groupName}
+                      amount={l.delta}
+                      balance={l.balance}
+                      colors={colors}
+                      onPress={
+                        l.receiptId
+                          ? () =>
+                              router.push({
+                                pathname: "/receipt",
+                                params: {
+                                  amount: String(Math.abs(l.delta)),
+                                  type: l.type === "combined" ? "contribution" : l.type,
+                                  group: l.groupName,
+                                  date: fmtDay(l.date),
+                                  note: l.note,
+                                  status: l.status,
+                                  direction: l.delta >= 0 ? "out" : "in",
+                                  txnId: l.receiptId,
+                                },
+                              })
+                          : undefined
+                      }
+                    />
+                  ))
+                )}
+                <LedgerRow
+                  date={fmtShort(statement.period.to)}
+                  title={copy.ledgerClosingRow}
+                  amount={null}
+                  balance={statement.closingBalance}
+                  colors={colors}
+                  bold
+                  last
+                />
               </Card>
             </>
           )}
 
-          {/* Everything else that moved money in the period */}
-          <SectionTitle colors={colors}>ALL ACTIVITY</SectionTitle>
+          {/* Every movement in the period. On a brief statement this IS the
+              statement: what it was, when, and which way the money went.
+              Anything more — reference, method, fees — is a tap away. */}
+          <SectionTitle colors={colors}>{copy.activityTitle.toUpperCase()}</SectionTitle>
           <Card padding={0}>
             {statement.activity.length === 0 ? (
               <View style={{ padding: 16 }}>
@@ -385,90 +367,85 @@ export default function StatementScreen() {
               </View>
             ) : (
               statement.activity.map((a, i) => (
-                <View
+                <ActivityRow
                   key={a.id}
-                  style={[
-                    styles.activityRow,
-                    i < statement.activity.length - 1 && {
-                      borderBottomWidth: 1,
-                      borderBottomColor: colors.border,
-                    },
-                  ]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: colors.textMain, fontWeight: "600", fontSize: 13 }}>
-                      {a.description}
-                    </Text>
-                    <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>
-                      {fmtShort(a.date)}
-                      {a.groupName ? ` · ${a.groupName}` : ""}
-                      {a.status !== "completed" ? ` · ${a.status}` : ""}
-                    </Text>
-                  </View>
-                  <Text
-                    style={{
-                      color:
-                        a.status !== "completed"
-                          ? colors.textMuted
-                          : a.direction === "in"
-                            ? colors.success
-                            : colors.textMain,
-                      fontWeight: "700",
-                      fontSize: 13,
-                    }}
-                  >
-                    {a.direction === "in" ? "+" : "−"}
-                    {formatZMW(a.amount)}
-                  </Text>
-                </View>
+                  item={a}
+                  label={movementLabel(copy, a)}
+                  showGroup={!statement.group}
+                  colors={colors}
+                  last={i === statement.activity.length - 1}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/receipt",
+                      params: {
+                        amount: String(a.amount),
+                        type: a.type === "combined" ? "contribution" : a.type,
+                        group: a.groupName,
+                        date: fmtDay(a.date),
+                        note: a.note,
+                        status: a.status,
+                        direction: a.direction,
+                        // A settled movement has a real receipt number; one
+                        // still pending has none, so the screen derives from id.
+                        ...(a.receiptId ? { txnId: a.receiptId } : { id: a.id }),
+                      },
+                    })
+                  }
+                />
               ))
             )}
           </Card>
 
-          {/* Cash totals, itemised by what the money was for */}
-          <SectionTitle colors={colors}>WHERE YOUR MONEY WENT</SectionTitle>
-          <Card padding={18}>
-            <PurposeGroup
-              title="Money you received"
-              rows={statement.breakdown?.in ?? []}
-              total={statement.totals.moneyIn}
-              totalLabel="Total received"
-              sign="+"
-              tint={colors.success}
-              colors={colors}
-            />
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            <PurposeGroup
-              title="Money you paid"
-              rows={statement.breakdown?.out ?? []}
-              total={statement.totals.moneyOut}
-              totalLabel="Total paid"
-              sign="−"
-              colors={colors}
-            />
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            {statement.totals.pending > 0 ? (
-              <>
-                <SummaryRow
-                  k="Still pending"
-                  v={formatZMW(statement.totals.pending)}
-                  tint={colors.warning}
+          {/* Cash totals, itemised by what the money was for. A brief
+              statement drops them: the activity list is the whole account,
+              and a giver has no stake to reconcile a breakdown against. */}
+          {!brief && (
+            <>
+              <SectionTitle colors={colors}>WHERE YOUR MONEY WENT</SectionTitle>
+              <Card padding={18}>
+                <PurposeGroup
+                  title="Money you received"
+                  rows={statement.breakdown?.in ?? []}
+                  total={statement.totals.moneyIn}
+                  totalLabel="Total received"
+                  sign="+"
+                  tint={colors.success}
                   colors={colors}
                 />
-                <Text
-                  style={{ color: colors.textMuted, fontSize: 11, marginTop: -4, marginBottom: 6 }}
-                >
-                  Not counted below until it settles
-                </Text>
-              </>
-            ) : null}
-            <SummaryRow
-              k="Net movement"
-              v={`${statement.totals.net < 0 ? "−" : "+"}${formatZMW(Math.abs(statement.totals.net))}`}
-              bold
-              colors={colors}
-            />
-          </Card>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <PurposeGroup
+                  title="Money you paid"
+                  rows={statement.breakdown?.out ?? []}
+                  total={statement.totals.moneyOut}
+                  totalLabel="Total paid"
+                  sign="−"
+                  colors={colors}
+                />
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                {statement.totals.pending > 0 ? (
+                  <>
+                    <SummaryRow
+                      k="Still pending"
+                      v={formatZMW(statement.totals.pending)}
+                      tint={colors.warning}
+                      colors={colors}
+                    />
+                    <Text
+                      style={{ color: colors.textMuted, fontSize: 11, marginTop: -4, marginBottom: 6 }}
+                    >
+                      Not counted below until it settles
+                    </Text>
+                  </>
+                ) : null}
+                <SummaryRow
+                  k="Net movement"
+                  v={`${statement.totals.net < 0 ? "−" : "+"}${formatZMW(Math.abs(statement.totals.net))}`}
+                  bold
+                  colors={colors}
+                />
+              </Card>
+            </>
+          )}
 
           <Text style={[styles.note, { color: colors.textMuted }]}>
             Statement no. {statement.statementId} · issued {fmtDay(statement.generatedAt)}.
@@ -596,59 +573,62 @@ const SectionTitle: React.FC<{ children: React.ReactNode; colors: Colors }> = ({
 }) => <Text style={[styles.section, { color: colors.textMuted }]}>{children}</Text>;
 
 /**
- * One project a member gave toward: what they gave, and how the project itself
- * is doing. The bar is the GROUP's progress, not this member's share of it —
- * a member giving K200 to a K50,000 building fund should see the building fund,
- * not a bar stuck at nothing.
+ * One movement, the way a phone should show it: what it was, when, and a
+ * colour that says which way the money went — green in, red out. Everything a
+ * receipt carries (reference, method, fees, network charge) is a tap away
+ * rather than crammed into a row read standing up on a bus.
  */
-const ProjectRow: React.FC<{
-  project: StatementProject;
-  amountLabel: string;
+const ActivityRow: React.FC<{
+  item: StatementActivity;
+  label: string;
   showGroup: boolean;
   colors: Colors;
   last?: boolean;
-}> = ({ project, amountLabel, showGroup, colors, last }) => {
-  const target = project.targetAmount ?? 0;
-  const progress = target > 0 ? Math.min(1, project.collected / target) : null;
+  onPress: () => void;
+}> = ({ item, label, showGroup, colors, last, onPress }) => {
+  // Nothing has moved yet on a pending line, so it stays grey rather than
+  // claiming a colour it has not earned.
+  const settled = item.status === "completed";
   return (
-    <View
-      style={[
-        styles.projectRow,
+    <Pressable
+      onPress={onPress}
+      testID={`statement-activity-${item.id}`}
+      style={({ pressed }) => [
+        styles.activityRow,
         !last && { borderBottomWidth: 1, borderBottomColor: colors.border },
+        pressed && { opacity: 0.6 },
       ]}
     >
-      <View style={styles.rowBetween}>
+      <View style={{ flex: 1 }}>
         <Text
-          style={{ color: colors.textMain, fontWeight: "700", fontSize: 13, flex: 1 }}
+          style={{ color: colors.textMain, fontWeight: "600", fontSize: 13 }}
           numberOfLines={1}
         >
-          {project.name}
+          {label}
         </Text>
-        <Text style={{ color: colors.success, fontWeight: "700", fontSize: 13, marginLeft: 12 }}>
-          +{formatZMW(project.amount)}
+        <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>
+          {fmtShort(item.date)}
+          {showGroup && item.groupName ? ` · ${item.groupName}` : ""}
+          {settled ? "" : ` · ${item.status}`}
         </Text>
       </View>
-
-      <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>
-        {amountLabel} · {project.count} {project.count === 1 ? "gift" : "gifts"}
-        {showGroup ? ` · ${project.groupName}` : ""}
-        {project.status && project.status !== "active" ? ` · ${project.status}` : ""}
+      <Text
+        style={{
+          color: !settled
+            ? colors.textMuted
+            : item.direction === "in"
+              ? colors.success
+              : colors.danger,
+          fontWeight: "700",
+          fontSize: 13,
+          marginLeft: 12,
+        }}
+      >
+        {item.direction === "in" ? "+" : "−"}
+        {formatZMW(item.amount)}
       </Text>
-
-      {progress !== null && (
-        <View style={{ marginTop: 8 }}>
-          <ProgressBar progress={progress} />
-          <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 4 }}>
-            Project raised {formatZMW(project.collected)} of {formatZMW(target)}
-          </Text>
-        </View>
-      )}
-      {progress === null && project.projectId && (
-        <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 4 }}>
-          Project raised {formatZMW(project.collected)} · no goal set
-        </Text>
-      )}
-    </View>
+      <ChevronRight size={16} color={colors.textMuted} style={{ marginLeft: 6 }} />
+    </Pressable>
   );
 };
 
@@ -879,12 +859,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 14,
     paddingVertical: 12,
-  },
-  projectRow: { paddingHorizontal: 14, paddingVertical: 12 },
-  rowBetween: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
   },
   note: { fontSize: 11, lineHeight: 17, marginTop: 18, textAlign: "center" },
   sheet: {
