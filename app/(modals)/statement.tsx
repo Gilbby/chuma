@@ -19,7 +19,6 @@ import {
   getStatement,
   Statement,
   StatementActivity,
-  StatementPurpose,
 } from "@/src/services/statement";
 import { exportStatementPdf, exportStatementCsv } from "@/src/utils/exports";
 import { formatZMW } from "@/src/utils/currency";
@@ -128,8 +127,6 @@ export default function StatementScreen() {
       : groups.map((g) => g.groupType)
   );
   const copy = statementCopy(flavour);
-  // A giving statement is the totals card and then the movements, nothing else.
-  const brief = copy.detail === "brief";
   const periodLabel = `${fmtDay(range.from)} – ${fmtDay(range.to)}`;
 
   const choosePreset = (key: PresetKey) => {
@@ -290,73 +287,10 @@ export default function StatementScreen() {
             />
           </Card>
 
-          {/* The running-balance account. A project fund has no balance to
-              run — see StatementCopy.detail — so a brief statement skips it. */}
-          {!brief && (
-            <>
-              <SectionTitle colors={colors}>{copy.ledgerTitle.toUpperCase()}</SectionTitle>
-              <Card padding={0}>
-                <LedgerRow
-                  date={fmtShort(statement.period.from)}
-                  title={copy.ledgerOpeningRow}
-                  amount={null}
-                  balance={statement.openingBalance}
-                  colors={colors}
-                  muted
-                />
-                {statement.lines.length === 0 ? (
-                  <View style={{ padding: 16 }}>
-                    <Text style={{ color: colors.textMuted, fontSize: 13 }}>
-                      {copy.ledgerEmpty}
-                    </Text>
-                  </View>
-                ) : (
-                  statement.lines.map((l) => (
-                    <LedgerRow
-                      key={l.id}
-                      date={fmtShort(l.date)}
-                      title={l.description}
-                      subtitle={statement.group ? l.note : l.groupName}
-                      amount={l.delta}
-                      balance={l.balance}
-                      colors={colors}
-                      onPress={
-                        l.receiptId
-                          ? () =>
-                              router.push({
-                                pathname: "/receipt",
-                                params: {
-                                  amount: String(Math.abs(l.delta)),
-                                  type: l.type === "combined" ? "contribution" : l.type,
-                                  group: l.groupName,
-                                  date: fmtDay(l.date),
-                                  note: l.note,
-                                  status: l.status,
-                                  direction: l.delta >= 0 ? "out" : "in",
-                                  txnId: l.receiptId,
-                                },
-                              })
-                          : undefined
-                      }
-                    />
-                  ))
-                )}
-                <LedgerRow
-                  date={fmtShort(statement.period.to)}
-                  title={copy.ledgerClosingRow}
-                  amount={null}
-                  balance={statement.closingBalance}
-                  colors={colors}
-                  bold
-                  last
-                />
-              </Card>
-            </>
-          )}
-
-          {/* Every movement in the period. On a brief statement this IS the
-              statement: what it was, when, and which way the money went.
-              Anything more — reference, method, fees — is a tap away. */}
+          {/* Every movement in the period. On screen this IS the statement:
+              what it was, when, and which way the money went. Anything more —
+              reference, method, fees, the running balance behind a line — is a
+              tap away on the receipt, or in the export. */}
           <SectionTitle colors={colors}>{copy.activityTitle.toUpperCase()}</SectionTitle>
           <Card padding={0}>
             {statement.activity.length === 0 ? (
@@ -395,57 +329,6 @@ export default function StatementScreen() {
               ))
             )}
           </Card>
-
-          {/* Cash totals, itemised by what the money was for. A brief
-              statement drops them: the activity list is the whole account,
-              and a giver has no stake to reconcile a breakdown against. */}
-          {!brief && (
-            <>
-              <SectionTitle colors={colors}>WHERE YOUR MONEY WENT</SectionTitle>
-              <Card padding={18}>
-                <PurposeGroup
-                  title="Money you received"
-                  rows={statement.breakdown?.in ?? []}
-                  total={statement.totals.moneyIn}
-                  totalLabel="Total received"
-                  sign="+"
-                  tint={colors.success}
-                  colors={colors}
-                />
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                <PurposeGroup
-                  title="Money you paid"
-                  rows={statement.breakdown?.out ?? []}
-                  total={statement.totals.moneyOut}
-                  totalLabel="Total paid"
-                  sign="−"
-                  colors={colors}
-                />
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                {statement.totals.pending > 0 ? (
-                  <>
-                    <SummaryRow
-                      k="Still pending"
-                      v={formatZMW(statement.totals.pending)}
-                      tint={colors.warning}
-                      colors={colors}
-                    />
-                    <Text
-                      style={{ color: colors.textMuted, fontSize: 11, marginTop: -4, marginBottom: 6 }}
-                    >
-                      Not counted below until it settles
-                    </Text>
-                  </>
-                ) : null}
-                <SummaryRow
-                  k="Net movement"
-                  v={`${statement.totals.net < 0 ? "−" : "+"}${formatZMW(Math.abs(statement.totals.net))}`}
-                  bold
-                  colors={colors}
-                />
-              </Card>
-            </>
-          )}
 
           <Text style={[styles.note, { color: colors.textMuted }]}>
             Statement no. {statement.statementId} · issued {fmtDay(statement.generatedAt)}.
@@ -655,124 +538,6 @@ const SummaryRow: React.FC<{
   </View>
 );
 
-/**
- * One side of the cash summary, itemised.
- *
- * "Money out K15,000" is a number, not an account — it hides that K14,860 of it
- * became savings and K140 cleared a penalty. The rows are the payment's own
- * legs and always sum to the total printed beneath them, so the itemisation
- * reads as the explanation of that total rather than as a second opinion.
- *
- * With no rows (an older API, or a quiet period) the total still stands on its
- * own, so the card never depends on the breakdown being there.
- */
-const PurposeGroup: React.FC<{
-  title: string;
-  rows: StatementPurpose[];
-  total: number;
-  totalLabel: string;
-  sign: "+" | "−";
-  colors: Colors;
-  tint?: string;
-}> = ({ title, rows, total, totalLabel, sign, colors, tint }) => (
-  <View>
-    <Text
-      style={{
-        color: colors.textMuted,
-        fontSize: 11,
-        fontWeight: "700",
-        letterSpacing: 0.4,
-        marginBottom: 2,
-      }}
-    >
-      {title.toUpperCase()}
-    </Text>
-    {rows.length > 0 ? (
-      rows.map((r) => (
-        <View key={r.key} style={styles.summaryRow}>
-          <Text style={{ color: colors.textMuted, fontSize: 13 }}>{r.label}</Text>
-          <Text style={{ color: tint ?? colors.textMain, fontSize: 13, fontWeight: "600" }}>
-            {sign}
-            {formatZMW(r.amount)}
-          </Text>
-        </View>
-      ))
-    ) : total <= 0 ? (
-      <Text style={{ color: colors.textMuted, fontSize: 13, paddingVertical: 6 }}>
-        Nothing this period
-      </Text>
-    ) : null}
-    <SummaryRow k={totalLabel} v={`${sign}${formatZMW(total)}`} bold colors={colors} />
-  </View>
-);
-
-const LedgerRow: React.FC<{
-  date: string;
-  title: string;
-  subtitle?: string;
-  amount: number | null;
-  balance: number;
-  colors: Colors;
-  muted?: boolean;
-  bold?: boolean;
-  last?: boolean;
-  onPress?: () => void;
-}> = ({ date, title, subtitle, amount, balance, colors, muted, bold, last, onPress }) => (
-  <Pressable
-    onPress={onPress}
-    disabled={!onPress}
-    style={[
-      styles.ledgerRow,
-      !last && { borderBottomWidth: 1, borderBottomColor: colors.border },
-    ]}
-  >
-    <Text style={{ color: colors.textMuted, fontSize: 11, width: 52 }}>{date}</Text>
-    <View style={{ flex: 1, paddingRight: 8 }}>
-      <Text
-        style={{
-          color: muted ? colors.textMuted : colors.textMain,
-          fontSize: 13,
-          fontWeight: bold ? "800" : "600",
-        }}
-        numberOfLines={1}
-      >
-        {title}
-      </Text>
-      {subtitle ? (
-        <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
-          {subtitle}
-        </Text>
-      ) : null}
-    </View>
-    <View style={{ alignItems: "flex-end", minWidth: 92 }}>
-      {amount === null ? (
-        <Text style={{ color: colors.textMuted, fontSize: 12 }}>—</Text>
-      ) : (
-        <Text
-          style={{
-            color: amount < 0 ? colors.danger : colors.success,
-            fontSize: 13,
-            fontWeight: "700",
-          }}
-        >
-          {amount < 0 ? "−" : "+"}
-          {formatZMW(Math.abs(amount))}
-        </Text>
-      )}
-      <Text
-        style={{
-          color: colors.textMain,
-          fontSize: 12,
-          fontWeight: bold ? "800" : "500",
-          marginTop: 2,
-        }}
-      >
-        {formatZMW(balance)}
-      </Text>
-    </View>
-  </Pressable>
-);
-
 const PickerRow: React.FC<{
   label: string;
   selected: boolean;
@@ -847,12 +612,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     marginTop: 22,
     marginBottom: 8,
-  },
-  ledgerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
   },
   activityRow: {
     flexDirection: "row",

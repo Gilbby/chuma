@@ -9,6 +9,13 @@
 // The screen, the PDF and the CSV all read from here so the copy a member sees
 // and the copy they hand to someone else cannot drift apart. Adding a group
 // type means adding a flavour below, not hunting for strings in three files.
+//
+// Shape does NOT vary by flavour, only wording. Every statement reads the same
+// way on screen — the totals card, then the activity, and the detail behind any
+// one line a tap away on its receipt — because a phone statement is read
+// standing up. The exports stay full for every flavour: a document handed to
+// someone else is read at a desk, and the itemisation is why it exists. So the
+// ledger and breakdown labels below are export-only copy.
 
 import { GroupType, isProjectFundType } from "@/src/types";
 import type { StatementTxnType } from "@/src/services/statement";
@@ -16,20 +23,6 @@ import type { StatementTxnType } from "@/src/services/statement";
 export type StatementFlavour = "savings" | "project-fund";
 
 export interface StatementCopy {
-  /**
-   * How much of the account a statement shows.
-   *
-   * "full" keeps the running-balance ledger and the cash breakdown: a saver
-   * holds a stake, and a stake is a figure they are entitled to see reconciled
-   * line by line. "brief" drops both and leaves the totals card followed by an
-   * activity list — a giver has no stake to reconcile, so a ledger of one
-   * column of gifts is ceremony, and the detail behind any single gift belongs
-   * on its receipt rather than on a screen read standing up.
-   *
-   * The exports stay full either way: a document handed to someone else is
-   * read at a desk, and the itemisation is the reason it exists.
-   */
-  detail: "full" | "brief";
   /** Cover label on the PDF and the first line of the CSV. */
   docLabel: string;
   /** Big figure at the top of the screen; the screen upper-cases it. */
@@ -42,6 +35,7 @@ export interface StatementCopy {
    *  the row rather than showing a permanent zero. */
   outLabel: string | null;
   closingLabel: string;
+  /** Exports only — the screen carries no ledger. See the note at the top. */
   ledgerTitle: string;
   ledgerEmpty: string;
   /** Heading over the movement list. */
@@ -68,7 +62,6 @@ export interface StatementCopy {
 
 const COPY: Record<StatementFlavour, StatementCopy> = {
   savings: {
-    detail: "full",
     docLabel: "Savings statement",
     balanceLabel: "Closing savings balance",
     summaryTitle: "Savings summary",
@@ -87,13 +80,12 @@ const COPY: Record<StatementFlavour, StatementCopy> = {
     ledgerOpeningRow: "Opening balance",
     ledgerClosingRow: "Closing balance",
     footnote:
-      "Your savings balance counts contributions and share-outs only. Loans, repayments, penalties and fees are real money, so they are shown above — they just do not change your stake.",
+      "Your savings balance counts contributions and share-outs only. Loans, repayments, penalties and fees are real money and show in your activity, but they do not change your stake. Tap any line for its receipt.",
     footnotePdf:
       "This is an official Chuma statement. The balance shown is your savings stake in the group — contributions and share-outs only. Loans, repayments, penalties and fees are real money and are itemised under Where your money went; they do not change your stake.",
     fileStem: "Chuma-Statement",
   },
   "project-fund": {
-    detail: "brief",
     docLabel: "Giving statement",
     balanceLabel: "Total given",
     summaryTitle: "Giving summary",

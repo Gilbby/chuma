@@ -48,9 +48,10 @@ import {
 } from "@/src/constants";
 import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
-// What giving that names no project is called. The API labels these the same
-// way on the statement (see statement.service.js), so the picker, the receipt
-// and the statement all call the one thing by the one name.
+// What giving that names no project is called. It is not something a member
+// picks — leaving the project picker alone is what produces it. The API labels
+// these the same way on the statement (see statement.service.js), so the
+// receipt and the statement call the one thing by the one name.
 const GENERAL_GIVING_LABEL = "General giving";
 
 type Step = "entry" | "confirm" | "success";
@@ -184,8 +185,8 @@ export default function Contribute() {
   );
   // Derived, not stored: a selection left over from the group they switched
   // away from matches nothing here. Nothing is picked for them either — an
-  // untouched picker means general giving, which is a real destination (it
-  // reads as "General giving" on the statement), not a missing answer.
+  // untouched picker is not a missing answer, it is untagged giving, which
+  // the statement carries as "General giving".
   const selectedProject = openProjects.find((p) => p.id === projectId) ?? null;
 
   // ── Amounts ─────────────────────────────────────────────────────────────────
@@ -408,46 +409,21 @@ export default function Contribute() {
                     {openProjects.length === 0 ? (
                       <Card padding={16}>
                         <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
-                          {selectedGroup.name} has no open projects right now, so this goes in
-                          as general giving. The Chairperson adds projects from the group
-                          screen.
+                          {selectedGroup.name} has no open projects right now. The Chairperson
+                          adds them from the group screen.
                         </Text>
                       </Card>
                     ) : (
                       <>
                         <Picker
                           label="Project"
-                          value={selectedProject?.name ?? GENERAL_GIVING_LABEL}
+                          value={selectedProject?.name ?? "Choose a project"}
                           onPress={() => setShowProjectPicker((s) => !s)}
                           colors={colors}
                           testID="contribute-project-picker"
                         />
                         {showProjectPicker && (
                           <Card padding={4} style={{ marginTop: 8 }}>
-                            {/* Sits above the projects because it is the
-                                default: a member who opens the picker and
-                                names nothing still gives, untagged. */}
-                            <Pressable
-                              onPress={() => {
-                                setProjectId(null);
-                                setShowProjectPicker(false);
-                              }}
-                              style={({ pressed }) => [
-                                styles.option,
-                                { backgroundColor: pressed ? colors.surfaceSecondary : "transparent" },
-                              ]}
-                              testID="contribute-project-general"
-                            >
-                              <View style={{ flex: 1 }}>
-                                <Text style={{ color: colors.textMain, fontWeight: "500" }}>
-                                  {GENERAL_GIVING_LABEL}
-                                </Text>
-                                <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>
-                                  Not tied to a project
-                                </Text>
-                              </View>
-                              {!selectedProject && <Check size={18} color={colors.primary} />}
-                            </Pressable>
                             {openProjects.map((p) => (
                               <Pressable
                                 key={p.id}
@@ -478,19 +454,6 @@ export default function Contribute() {
                             ))}
                           </Card>
                         )}
-                        {!selectedProject ? (
-                          <Text
-                            style={{
-                              color: colors.textMuted,
-                              fontSize: 12,
-                              marginTop: 8,
-                              lineHeight: 18,
-                            }}
-                          >
-                            Goes to the group, not to any one project. Pick a project above to
-                            put it toward something named.
-                          </Text>
-                        ) : null}
                         {selectedProject?.targetAmount ? (
                           <View style={{ marginTop: 12 }}>
                             <ProgressBar
