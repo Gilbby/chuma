@@ -16,6 +16,7 @@ import { formatZMW } from "@/src/utils/currency";
 import { Group, Loan, TxnItem } from "@/src/types";
 import { exportTransactionsPdf, exportTransactionsCsv } from "@/src/utils/exports";
 import { TrendingUp, TrendingDown, Users, Banknote, Download } from "lucide-react-native";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 const { width } = Dimensions.get("window");
 
@@ -28,8 +29,8 @@ export default function Reports() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [transactions, setTransactions] = useState<TxnItem[]>([]);
-  const [trendData, setTrendData] = useState<{ label: string; value: number }[]>([]);
-  const [report, setReport] = useState<GroupReport | null>(null);
+  const [fetchedTrend, setFetchedTrend] = useState<{ label: string; value: number }[]>([]);
+  const [fetchedReport, setFetchedReport] = useState<GroupReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -48,9 +49,7 @@ export default function Reports() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   const data = transactions;
 
@@ -59,18 +58,33 @@ export default function Reports() {
     : groups[0];
 
   useEffect(() => {
-    if (!primaryGroup?.id) {
-      setTrendData([]);
-      setReport(null);
-      return;
-    }
-    getSavingsTrend(primaryGroup.id)
-      .then(setTrendData)
-      .catch(() => setTrendData([]));
-    getGroupReport(primaryGroup.id)
-      .then(setReport)
-      .catch(() => setReport(null));
+    const gid = primaryGroup?.id;
+    if (!gid) return;
+    let cancelled = false;
+    getSavingsTrend(gid)
+      .then((d) => {
+        if (!cancelled) setFetchedTrend(d);
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedTrend([]);
+      });
+    getGroupReport(gid)
+      .then((d) => {
+        if (!cancelled) setFetchedReport(d);
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedReport(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [primaryGroup?.id]);
+
+  // With no group there is nothing to report on. Masking here rather than
+  // clearing in the effect keeps the effect off the synchronous setState path,
+  // and stops a previous group’s numbers showing while the next ones load.
+  const trendData = primaryGroup?.id ? fetchedTrend : [];
+  const report = primaryGroup?.id ? fetchedReport : null;
 
   const groupRepayment = primaryGroup ? getRepaymentRate(primaryGroup, loans) : 0;
 

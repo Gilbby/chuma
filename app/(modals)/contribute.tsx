@@ -46,6 +46,7 @@ import {
   MOBILE_MONEY_ON_HOLD,
   MOBILE_MONEY_HOLD_NOTE,
 } from "@/src/constants";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 type Step = "entry" | "confirm" | "success";
 type LoanMode = "installment" | "full" | "custom";
@@ -71,7 +72,9 @@ export default function Contribute() {
   // groups, but one deposit settles one group's dues.
   const [loans, setLoans] = useState<Loan[]>([]);
   const [penalties, setPenalties] = useState<Penalty[]>([]);
-  const [obligationsLoading, setObligationsLoading] = useState(false);
+  // The group whose loans + penalties are currently held; drives the derived
+  // loading flag below.
+  const [obligationsFor, setObligationsFor] = useState<string | null>(null);
   // Per-loan chosen repayment: installment (default), full balance or custom.
   const [loanModes, setLoanModes] = useState<
     Record<string, { mode: LoanMode; custom: string }>
@@ -99,7 +102,7 @@ export default function Contribute() {
   } | null>(null);
   const [pricingLoading, setPricingLoading] = useState(false);
   const [pricingError, setPricingError] = useState<string | null>(null);
-  const receiptId = useRef(`CHM-${Math.floor(Math.random() * 90000) + 10000}`);
+  const [receiptId] = useState(() => `CHM-${Math.floor(Math.random() * 90000) + 10000}`);
 
   const load = useCallback(async () => {
     setGroupsLoading(true);
@@ -123,9 +126,7 @@ export default function Contribute() {
     }
   }, [groupId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   // Load the selected group's outstanding loans + penalties. Each loan starts on
   // its installment; each pending penalty is always included.
@@ -133,7 +134,6 @@ export default function Contribute() {
     const gid = selectedGroup?.id;
     if (!gid) return;
     let cancelled = false;
-    setObligationsLoading(true);
     Promise.all([
       getLoans({ mine: true, groupId: gid }).catch(() => [] as Loan[]),
       getPenalties({ mine: true, groupId: gid }).catch(() => [] as Penalty[]),
@@ -154,12 +154,17 @@ export default function Contribute() {
         setPenalties(fetchedPenalties.filter((p) => p.status === "pending"));
       })
       .finally(() => {
-        if (!cancelled) setObligationsLoading(false);
+        if (!cancelled) setObligationsFor(gid);
       });
     return () => {
       cancelled = true;
     };
   }, [selectedGroup?.id]);
+
+  // Derived rather than stored, so the flag can never disagree with the data:
+  // a group is picked and what we hold is not yet its obligations.
+  const obligationsLoading =
+    !!selectedGroup?.id && obligationsFor !== selectedGroup.id;
 
   // ── Amounts ─────────────────────────────────────────────────────────────────
   const savingsAmount = selectedGroup?.contributionAmount ?? 0;
@@ -303,7 +308,7 @@ export default function Contribute() {
         group={selectedGroup.name}
         colors={colors}
         router={router}
-        receiptId={serverTxn?.receiptId ?? receiptId.current}
+        receiptId={serverTxn?.receiptId ?? receiptId}
         status={serverTxn?.status ?? "completed"}
         isCash={payCash}
       />
@@ -687,7 +692,7 @@ export default function Contribute() {
                 {!payCash && (pricing?.networkFee ?? 0) > 0 ? (
                   <Text style={[styles.confirmLabel, { color: colors.textMuted, marginTop: 8 }]}>
                     Your mobile network charges an extra {formatZMW(pricing?.networkFee ?? 0)} to send
-                    this, deducted from your wallet separately. It doesn't go to the group or Chuma.
+                    this, deducted from your wallet separately. It doesn&apos;t go to the group or Chuma.
                   </Text>
                 ) : null}
 

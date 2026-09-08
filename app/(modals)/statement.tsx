@@ -20,6 +20,7 @@ import { exportStatementPdf, exportStatementCsv } from "@/src/utils/exports";
 import { formatZMW } from "@/src/utils/currency";
 import { Group } from "@/src/types";
 import { Download, Calendar, ChevronDown, Check } from "lucide-react-native";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 // ─── Period presets ──────────────────────────────────────────────────────────
 // A statement always covers a closed range. `to` is pushed to the last
@@ -107,9 +108,7 @@ export default function StatementScreen() {
     }
   }, [range, groupId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   const groupLabel = groupId
     ? groups.find((g) => g.id === groupId)?.name ?? "Selected group"
@@ -428,7 +427,7 @@ export default function StatementScreen() {
           <Text style={[styles.note, { color: colors.textMuted }]}>
             Statement no. {statement.statementId} · issued {fmtDay(statement.generatedAt)}.
             {"\n"}Your savings balance counts contributions and share-outs only. Loans,
-            repayments, penalties and fees are real money, so they are itemised above —
+            repayments, penalties and fees are real money, so they are w above —
             they just do not change your stake.
           </Text>
         </ScrollView>

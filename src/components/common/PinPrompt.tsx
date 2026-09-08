@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -49,14 +49,18 @@ export function PinPrompt({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Never reopen holding the last attempt's digits or error.
-  useEffect(() => {
+  // Never reopen holding the last attempt's digits or error. Adjusted during
+  // render on the transition into visible, so the reset is part of the opening
+  // render instead of a second one right after it.
+  const [prevVisible, setPrevVisible] = useState(visible);
+  if (prevVisible !== visible) {
+    setPrevVisible(visible);
     if (visible) {
       setPin("");
       setError("");
       setLoading(false);
     }
-  }, [visible]);
+  }
 
   const submit = async (code: string) => {
     setLoading(true);

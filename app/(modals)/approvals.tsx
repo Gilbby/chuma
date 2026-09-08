@@ -16,6 +16,7 @@ import { formatZMW } from "@/src/utils/currency";
 import { formatDate } from "@/src/utils/date";
 import { useRole } from "@/src/contexts/RoleContext";
 import { Banknote, Wallet, Scale, ShieldCheck, Check, X, Info, Sparkles, UserMinus, Trash2, HandCoins } from "lucide-react-native";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 const TYPE_ICONS: Record<Approval["type"], typeof Banknote> = {
   loan: Banknote,
@@ -83,9 +84,7 @@ export default function Approvals() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

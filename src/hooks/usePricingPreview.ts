@@ -36,36 +36,35 @@ export function usePricingPreview<T = PayoutPreview>(
   opts: { debounceMs?: number; enabled?: boolean } = {}
 ): { data: T | null; loading: boolean; error: string | null } {
   const { debounceMs = 400, enabled = true } = opts;
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const active = enabled && amount > 0;
+  // Identifies the request a settled result belongs to, so loading and error can
+  // be derived from it instead of being reset synchronously inside the effect.
+  const key = kind + ":" + amount;
+  const [settled, setSettled] = useState<{
+    key: string;
+    data: T | null;
+    error: string | null;
+  } | null>(null);
 
   useEffect(() => {
-    if (!enabled || !(amount > 0)) {
-      setData(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
+    if (!active) return;
 
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-
     const timer = setTimeout(async () => {
       try {
         const res = await api<T>("/pricing/preview", {
           method: "POST",
           body: { kind, amount },
         });
-        if (!cancelled) setData(res);
+        if (!cancelled) setSettled({ key, data: res, error: null });
       } catch (e: any) {
         if (!cancelled) {
-          setError(e?.message || "Couldn't load fees. Please try again.");
-          setData(null);
+          setSettled({
+            key,
+            data: null,
+            error: e?.message || "Couldn't load fees. Please try again.",
+          });
         }
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     }, debounceMs);
 
@@ -73,7 +72,15 @@ export function usePricingPreview<T = PayoutPreview>(
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [kind, amount, enabled, debounceMs]);
+  }, [active, key, kind, amount, debounceMs]);
 
-  return { data, loading, error };
+  // Loading until the settled result is the one for the current request. The
+  // last payload is kept on screen while the next one is in flight, but an error
+  // only ever belongs to the request that produced it.
+  const fresh = settled?.key === key;
+  return {
+    data: active ? settled?.data ?? null : null,
+    loading: active && !fresh,
+    error: active && fresh ? settled.error : null,
+  };
 }

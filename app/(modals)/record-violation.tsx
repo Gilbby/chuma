@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import { getGroupById } from "@/src/services/groups";
 import { formatZMW } from "@/src/utils/currency";
 import { Group, Penalty } from "@/src/types";
 import { AlertTriangle, Check } from "lucide-react-native";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 type ViolationType = Penalty["violationType"];
 type Step = "form" | "success";
@@ -70,9 +71,7 @@ export default function RecordViolation() {
     }
   }, [groupId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   const suggestedAmount = (type: ViolationType): number => {
     const c = group?.constitution;

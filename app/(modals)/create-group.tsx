@@ -360,9 +360,13 @@ export default function CreateGroup() {
 
   // Keep the saved constitution honest about the type: switching to a
   // savings-only type clears lending, switching back restores the default.
-  useEffect(() => {
+  // Adjusted during render rather than in an effect so the reset lands in the
+  // same pass as the type change instead of causing a second one.
+  const [prevLendingAvailable, setPrevLendingAvailable] = useState(lendingAvailable);
+  if (prevLendingAvailable !== lendingAvailable) {
+    setPrevLendingAvailable(lendingAvailable);
     setInternalLending(lendingAvailable);
-  }, [lendingAvailable]);
+  }
 
   // Set a repayment band's max term, keeping the ladder valid: every term stays
   // within 1…cycle, and larger loans never get a shorter term than smaller ones.
@@ -463,7 +467,7 @@ export default function CreateGroup() {
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 22, marginBottom: 24 }}>
-                Invite people to {groupName} by phone number. They'll get an SMS and see the invite in their app.
+                Invite people to {groupName} by phone number. They&apos;ll get an SMS and see the invite in their app.
               </Text>
 
               <FL text="Invite by phone" colors={colors} />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ import {
   MOBILE_MONEY_HOLD_NOTE,
 } from "@/src/constants";
 import { Check, Clock, Lock } from "lucide-react-native";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 export default function Repay() {
   const { colors } = useTheme();
@@ -58,9 +59,7 @@ export default function Repay() {
     }
   }, [loanId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   const amount = selected
     ? mode === "installment"

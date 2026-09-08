@@ -37,6 +37,7 @@ import { formatDate } from "@/src/utils/date";
 import { Group } from "@/src/types";
 import { AlertCircle, Check, ChevronDown, Clock, Info, Lock } from "lucide-react-native";
 import { MOBILE_MONEY_ON_HOLD } from "@/src/constants";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 type Step = "request" | "breakdown" | "confirm" | "success";
 
@@ -62,7 +63,8 @@ export default function Loan() {
   const [groupsError, setGroupsError] = useState(false);
   // True when they belong to groups but none of them lend.
   const [lendingBlocked, setLendingBlocked] = useState(false);
-  const [eligLoading, setEligLoading] = useState(true);
+  // The group whose eligibility `elig` holds; drives the derived loading flag.
+  const [eligFor, setEligFor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
@@ -87,24 +89,34 @@ export default function Loan() {
     }
   }, [groupId]);
 
-  useEffect(() => {
-    loadGroups();
-  }, [loadGroups]);
+  useAsyncEffect(loadGroups);
 
   useEffect(() => {
-    if (!grp?.id) {
-      // There is nothing to score eligibility against without a group. Bailing
-      // out with eligLoading still true would hang the guard below forever.
-      setElig(null);
-      setEligLoading(false);
-      return;
-    }
-    setEligLoading(true);
-    getLoanEligibility(grp.id)
-      .then(setElig)
-      .catch(() => setElig(null))
-      .finally(() => setEligLoading(false));
+    const gid = grp?.id;
+    if (!gid) return;
+    let cancelled = false;
+    getLoanEligibility(gid)
+      .then((e) => {
+        if (!cancelled) {
+          setElig(e);
+          setEligFor(gid);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setElig(null);
+          setEligFor(gid);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [grp?.id]);
+
+  // Derived rather than stored: we are loading exactly while a group is picked
+  // and `elig` does not yet belong to it. There is nothing to score without a
+  // group, so that case is not loading — the guard below catches it via `!grp`.
+  const eligLoading = !!grp?.id && eligFor !== grp.id;
 
   const handleAmountChange = (text: string) => {
     const cleaned = text.replace(/[^0-9.]/g, "");

@@ -12,7 +12,7 @@
  * in place: unfolding works for a group of six and collapses at thirty, burying
  * every other run with nowhere to search.
  */
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet, Pressable, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { Card } from "@/src/components/ui/Card";
@@ -20,6 +20,7 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { getShareOutHistory, ShareOutRun } from "@/src/services/shareOut";
 import { ShareOutRunRow } from "./ShareOutRunRow";
 import { ArrowRight } from "lucide-react-native";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 /** How many runs the reports tab lists before handing off to the full screen. */
 const PREVIEW = 3;
@@ -48,9 +49,7 @@ export function ShareOutHistory({ groupId }: { groupId?: string }) {
     }
   }, [groupId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   const shown = runs.slice(0, PREVIEW);
   const more = runs.length - shown.length;

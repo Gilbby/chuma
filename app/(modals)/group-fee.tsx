@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
@@ -13,6 +13,7 @@ import { formatZMW } from "@/src/utils/currency";
 import { getMonthsOwed, getAmountOwed } from "@/src/services/groupFees";
 import { detectNetwork } from "@/src/services/mobileMoney";
 import { Check, Clock, CalendarClock } from "lucide-react-native";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 type Receipt = {
   amount: number;
@@ -40,7 +41,7 @@ export default function GroupFeeScreen() {
   const [paid, setPaid] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [payError, setPayError] = useState("");
-  const receiptRef = useRef(`CHF-${Math.floor(Math.random() * 90000) + 10000}`);
+  const [receiptRef] = useState(() => `CHF-${Math.floor(Math.random() * 90000) + 10000}`);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,9 +57,7 @@ export default function GroupFeeScreen() {
     }
   }, [groupId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   // Prevent back gesture once payment is complete
   useEffect(() => {
@@ -150,7 +149,7 @@ export default function GroupFeeScreen() {
 
           {/* Receipt card */}
           <Card padding={16} style={{ marginTop: 20 }}>
-            <ReceiptRow label="Receipt no." value={receipt.receiptId ?? receiptRef.current} colors={colors} />
+            <ReceiptRow label="Receipt no." value={receipt.receiptId ?? receiptRef} colors={colors} />
             <ReceiptRow label="Amount paid" value={formatZMW(receipt.amount)} colors={colors} />
             <ReceiptRow
               label="Months cleared"
@@ -241,7 +240,7 @@ export default function GroupFeeScreen() {
             <Check size={36} color={colors.primary} strokeWidth={2.5} />
           </View>
           <Text style={{ color: colors.textMain, fontSize: 17, fontWeight: "700", textAlign: "center" }}>
-            This group's fee is fully paid.
+            This group&apos;s fee is fully paid.
           </Text>
           <View style={{ marginTop: 24, width: "100%" }}>
             <Button label="Go to groups" onPress={() => router.replace("/(tabs)/groups")} />

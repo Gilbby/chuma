@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import { getCurrentUser } from "@/src/utils/currentUser";
 import { formatZMW } from "@/src/utils/currency";
 import { Group, Member, Role } from "@/src/types";
 import { Crown, Shield, FileText, Vote } from "lucide-react-native";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 // `Plus`, `Edit3`, `Lock` and `X` go back in when proposals and rule editing
 // return; see the hidden block at the foot of this file.
@@ -96,9 +97,7 @@ export default function Governance() {
     }
   }, [params.groupId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

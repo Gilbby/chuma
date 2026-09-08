@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -53,13 +53,17 @@ export default function ReceiptScreen() {
   const router = useRouter();
   const params = useLocalSearchParams() as ReceiptParams;
 
+  // Generated once, not per render, so a receipt opened without a txnId keeps a
+  // stable number instead of a new one each time params change.
+  const [fallbackTxnId] = useState(() => `CHM-${Date.now().toString().slice(-8)}`);
+
   // Build the receipt entirely from params — callers pass all needed data.
   const data = useMemo(() => {
     const txnId = params.txnId
       ? params.txnId
       : params.id
         ? `CHM-${params.id.toUpperCase()}-${(2026 + parseInt(params.id.replace(/\D/g, "") || "0", 10)) % 99999}`
-        : `CHM-${Date.now().toString().slice(-8)}`;
+        : fallbackTxnId;
     return {
       amount: parseFloat(params.amount ?? "0"),
       type: (params.type ?? "contribution") as keyof typeof TYPE_ICONS,
@@ -70,7 +74,7 @@ export default function ReceiptScreen() {
       direction: (params.direction ?? "out") as "in" | "out",
       txnId,
     };
-  }, [params]);
+  }, [params, fallbackTxnId]);
 
   const Icon = TYPE_ICONS[data.type as keyof typeof TYPE_ICONS] ?? PiggyBank;
   const typeLabel =

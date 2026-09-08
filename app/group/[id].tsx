@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -72,6 +72,7 @@ import {
   Clock,
   History,
 } from "lucide-react-native";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 type TabKey = "members" | "contributions" | "loans" | "approvals" | "reports" | "governance";
 
@@ -133,7 +134,7 @@ export default function GroupDetails() {
     }
   }, [id]);
 
-  useEffect(() => { load(); }, [load]);
+  useAsyncEffect(load);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -1319,9 +1320,9 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
       </Modal>
 
       {locked && (
-        <View style={StyleSheet.absoluteFillObject}>
-          <BlurView intensity={100} tint="dark" style={StyleSheet.absoluteFillObject} />
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.65)" }]}>
+        <View style={StyleSheet.absoluteFill}>
+          <BlurView intensity={100} tint="dark" style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.65)" }]}>
             {/* Back icon — top left, respects status bar */}
             <Pressable
               onPress={() => router.back()}

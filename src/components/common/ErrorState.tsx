@@ -29,7 +29,7 @@ export const ErrorState: React.FC<Props> = ({
         <WifiOff size={26} color={colors.danger} />
       </View>
       <Text style={{ color: colors.textMain, fontSize: 16, fontWeight: "700", marginTop: 16 }}>
-        Couldn't load data
+        Couldn&apos;t load data
       </Text>
       <Text
         style={{

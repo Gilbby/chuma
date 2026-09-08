@@ -6,7 +6,7 @@
  * screen exists to answer — so the full list gets its own scroll, with the
  * running total of everything the group has ever paid out at the top.
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, FlatList, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams } from "expo-router";
@@ -16,6 +16,7 @@ import { Card } from "@/src/components/ui/Card";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { getShareOutHistory, ShareOutRun } from "@/src/services/shareOut";
 import { formatZMW } from "@/src/utils/currency";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 /** Deep enough to be the whole record for any realistic group. */
 const LIMIT = 100;
@@ -45,9 +46,7 @@ export default function ShareOutHistoryScreen() {
     }
   }, [groupId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   const totalDistributed = runs.reduce((s, r) => s + r.totalPaid, 0);
 

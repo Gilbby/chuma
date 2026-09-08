@@ -55,33 +55,28 @@ export default function EditProfile() {
   const [accountNameError, setAccountNameError] = useState("");
   const [accountNumberError, setAccountNumberError] = useState("");
 
-  // Load the current user on mount
+  // Load the current user on mount and seed the form from it in the same pass.
+  // Seeding in a separate effect keyed on [me] would render twice per fetch.
   useEffect(() => {
     let active = true;
     (async () => {
-      const user = await getCurrentUser();
-      if (active) {
-        setMe(user);
-        setLoading(false);
+      const user: any = await getCurrentUser();
+      if (!active) return;
+      setMe(user);
+      setName(user?.name ?? "");
+      setAvatar(user?.avatar ?? "");
+      setAccountName(user?.preferredPayment?.accountName ?? user?.name ?? "");
+      setAccountNumber(user?.preferredPayment?.accountNumber ?? user?.phone ?? "");
+      const method = user?.preferredPayment?.method;
+      if (method && (PAYMENT_METHODS as readonly string[]).includes(method)) {
+        setPreferredMethod(method as PaymentMethod);
       }
+      setLoading(false);
     })();
     return () => {
       active = false;
     };
   }, []);
-
-  // Initialize field states once the user is loaded
-  useEffect(() => {
-    if (!me) return;
-    setName(me.name ?? "");
-    setAvatar(me.avatar ?? "");
-    setAccountName(me.preferredPayment?.accountName ?? me.name ?? "");
-    setAccountNumber(me.preferredPayment?.accountNumber ?? me.phone ?? "");
-    const method = me.preferredPayment?.method;
-    if (method && (PAYMENT_METHODS as readonly string[]).includes(method)) {
-      setPreferredMethod(method as PaymentMethod);
-    }
-  }, [me]);
 
   const isWallet = (WALLET_METHODS as PaymentMethod[]).includes(preferredMethod);
   const isCash = preferredMethod === "Cash";
@@ -244,7 +239,7 @@ export default function EditProfile() {
               </Text>
             </View>
             <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 6, lineHeight: 16 }}>
-              Your login number can't be changed here.
+              Your login number can&apos;t be changed here.
             </Text>
 
             {/* Section 3 — Preferred payment method */}

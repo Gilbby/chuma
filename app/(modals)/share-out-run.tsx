@@ -7,7 +7,7 @@
  * past everyone. A run gets its own screen instead — its own scroll, its own
  * search box, and a back button that returns to the list where it was.
  */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -37,6 +37,7 @@ import {
   Smartphone,
   Search,
 } from "lucide-react-native";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "";
@@ -127,9 +128,7 @@ export default function ShareOutRunScreen() {
     }
   }, [groupId, shareOutId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   // Searching a long list by name is the whole reason a member opens an old
   // run: they are looking for one person, usually themselves.

@@ -75,8 +75,8 @@ export default function Splash() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: "center", justifyContent: "center" },
-  bg: { ...StyleSheet.absoluteFillObject, opacity: 0.35 },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(10, 92, 54, 0.55)" },
+  bg: { ...StyleSheet.absoluteFill, opacity: 0.35 },
+  overlay: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(10, 92, 54, 0.55)" },
   content: { alignItems: "center" },
   logoCircle: {
     width: 165,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -39,6 +39,7 @@ import {
   Smartphone,
   ChevronRight,
 } from "lucide-react-native";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 function addDays(iso: string, days: number): string {
   const d = new Date(iso);
@@ -199,9 +200,7 @@ export default function ShareOutScreen() {
     }
   }, [activeGroupId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   const group = groups.find((g) => g.id === activeGroupId);
 

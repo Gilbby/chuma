@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -15,6 +15,7 @@ import {
   MOBILE_MONEY_ON_HOLD,
   MOBILE_MONEY_HOLD_NOTE,
 } from "@/src/constants";
+import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
 type Step = "confirm" | "success";
 
@@ -35,7 +36,7 @@ export default function PenaltyPay() {
   const [error, setError] = useState("");
   const [alreadyPaid, setAlreadyPaid] = useState(false);
   const [resultTxn, setResultTxn] = useState<any>(null);
-  const receiptId = useRef(`CHM-${Math.floor(Math.random() * 90000) + 10000}`);
+  const [receiptId] = useState(() => `CHM-${Math.floor(Math.random() * 90000) + 10000}`);
 
   const load = useCallback(async () => {
     setUserLoading(true);
@@ -47,9 +48,7 @@ export default function PenaltyPay() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useAsyncEffect(load);
 
   const num = Number(amount) || 0;
   const wallet = detectNetwork(payerPhone);
@@ -89,7 +88,7 @@ export default function PenaltyPay() {
         group={groupName!}
         colors={colors}
         router={router}
-        receiptId={resultTxn?.receiptId ?? receiptId.current}
+        receiptId={resultTxn?.receiptId ?? receiptId}
         pending={resultTxn?.status === "pending"}
       />
     );
