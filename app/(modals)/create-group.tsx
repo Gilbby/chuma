@@ -27,8 +27,9 @@ import { defaultTiersForCycle, tierBandLabel } from "@/src/services/loans";
 import { getCurrentUser } from "@/src/utils/currentUser";
 import { detectNetwork } from "@/src/services/mobileMoney";
 import { formatZMW } from "@/src/utils/currency";
-import { Check, Camera, X, CreditCard, Contact } from "lucide-react-native";
+import { Check, Camera, X, CreditCard, Contact, Plus } from "lucide-react-native";
 import Slider from "@react-native-community/slider";
+import { isProjectFundType } from "@/src/types";
 import type { GroupType, GroupConstitution, LoanRepaymentTier } from "@/src/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -44,6 +45,11 @@ const STEP_TITLES = [
   "Payment",
 ];
 
+// Project-fund types have no contribution setup — step 2 is where they name
+// what they are raising money for instead.
+const PROJECT_FUND_STEP_TITLES = [...STEP_TITLES];
+PROJECT_FUND_STEP_TITLES[1] = "What you're saving for";
+
 const GROUP_TYPES: { label: string; value: GroupType }[] = [
   { label: "Savings Group", value: "savings-group" },
   { label: "Cooperative", value: "cooperative" },
@@ -52,12 +58,13 @@ const GROUP_TYPES: { label: string; value: GroupType }[] = [
   { label: "Investment Group", value: "investment-group" },
 ];
 
-// Types that pool contributions without lending them back out. The loan-rules
-// step is skipped for these and the constitution is saved with lending off, so
-// the API refuses loan requests against the group (loan.routes.js).
-const SAVINGS_ONLY_TYPES: GroupType[] = ["church-group"];
+// Project-fund types (church) collect toward named projects instead of running
+// a contribution cycle: no fixed amount, no frequency, no deadline, no late
+// penalty, no lending and no share-out. The loan-rules step is skipped and the
+// API enforces the same rules on its side (logic.service.js PROJECT_FUND_TYPES).
+const lendsToMembers = (t: GroupType | "") => !!t && !isProjectFundType(t);
 
-const lendsToMembers = (t: GroupType | "") => !!t && !SAVINGS_ONLY_TYPES.includes(t);
+const MAX_PROJECTS = 30;
 
 const CONTRIB_FREQS = ["Weekly", "Bi-weekly", "Monthly"];
 const CYCLE_DURATIONS = ["3 months", "6 months", "12 months"];
@@ -122,6 +129,14 @@ export default function CreateGroup() {
   const [lateContribEnabled, setLateContribEnabled] = useState(false);
   const [lateContributionPenaltyRate, setLateContributionPenaltyRate] = useState("1");
 
+  // Step 2 (project-fund types) — the projects the group is raising money for.
+  // One blank row to start: at least one project must be named before the group
+  // can be created, because every contribution has to be given toward one.
+  const [projects, setProjects] = useState<{ key: string; name: string; target: string }[]>(
+    [{ key: "p0", name: "", target: "" }]
+  );
+  const projectKeyRef = useRef(1);
+
   // Step 3 — Loan Rules
   const [internalLending, setInternalLending] = useState(true);
   const [loanMultiplier, setLoanMultiplier] = useState("2");
@@ -176,6 +191,9 @@ export default function CreateGroup() {
 
   const toNum = (s: string) => parseFloat(s) || 0;
   const parseMonths = (s: string) => parseInt(s.split(" ")[0]) || 6;
+
+  // Church-style group: gives toward named projects, no cycle of any kind.
+  const isProjectFund = isProjectFundType(groupType);
 
   // Re-baseline loan repayment tiers whenever the cycle length changes, so the
   // defaults always fit the cycle (a longer cycle allows longer loans). Skips
@@ -288,13 +306,58 @@ export default function CreateGroup() {
   const clearErr = (key: string) =>
     setErrors((prev) => { const next = { ...prev }; delete next[key]; return next; });
 
+  // ── Savings projects (project-fund types) ───────────────────────────────────
+
+  const addProjectRow = () =>
+    setProjects((prev) =>
+      prev.length >= MAX_PROJECTS
+        ? prev
+        : [...prev, { key: `p${projectKeyRef.current++}`, name: "", target: "" }]
+    );
+
+  const updateProject = (key: string, patch: { name?: string; target?: string }) => {
+    setProjects((prev) => prev.map((p) => (p.key === key ? { ...p, ...patch } : p)));
+    clearErr(`project-${key}`);
+    clearErr("projects");
+  };
+
+  // The last row is never removable: a project-fund group always has at least
+  // one project, so there is always a row to type into.
+  const removeProjectRow = (key: string) =>
+    setProjects((prev) => (prev.length <= 1 ? prev : prev.filter((p) => p.key !== key)));
+
+  const namedProjects = projects.filter((p) => p.name.trim());
+
   const validate = (): boolean => {
     const e: Record<string, string> = {};
     if (step === 1) {
       if (!groupName.trim()) e.groupName = "Group name is required";
       if (!groupType) e.groupType = "Select a group type";
     }
-    if (step === 2) {
+    if (step === 2 && isProjectFund) {
+      // At least one project, no blank-but-targeted rows, no two projects
+      // members would see as the same name on the payment screen.
+      if (!namedProjects.length) {
+        e.projects = "Add at least one project this group is saving for";
+      }
+      const seen = new Set<string>();
+      for (const p of projects) {
+        const name = p.name.trim();
+        const target = p.target.trim();
+        if (!name) {
+          if (target) e[`project-${p.key}`] = "Name this project";
+          continue;
+        }
+        if (seen.has(name.toLowerCase())) {
+          e[`project-${p.key}`] = "You already added a project with this name";
+          continue;
+        }
+        seen.add(name.toLowerCase());
+        if (target && toNum(target) <= 0)
+          e[`project-${p.key}`] = "Goal must be more than 0, or leave it blank";
+      }
+    }
+    if (step === 2 && !isProjectFund) {
       if (toNum(contribAmount) <= 0) e.contribAmount = "Enter a valid contribution amount";
       if (contribFreq === "Monthly") {
         const d = parseInt(deadlineDay) || 0;
@@ -403,7 +466,8 @@ export default function CreateGroup() {
       const constitution: GroupConstitution = {
         penaltyRules: {
           lateContribution: {
-            enabled: lateContribEnabled,
+            // No schedule to miss, so nothing could ever be late.
+            enabled: !isProjectFund && lateContribEnabled,
             penaltyType: lateContribPenaltyType,
             penaltyRate: lateContribPenaltyType === "percent" ? toNum(lateContributionPenaltyRate) || 1 : undefined,
             penaltyAmount: lateContribPenaltyType === "flat" ? toNum(lateContribFlatAmount) || 20 : undefined,
@@ -430,16 +494,31 @@ export default function CreateGroup() {
 
       const user = await getCurrentUser<{ phone?: string }>();
 
+      // A project-fund group has no cycle to describe: no amount, no frequency,
+      // no share-out date, no loan terms. It sends its projects instead, and
+      // the API discards these fields for the type anyway.
+      const cycleFields = isProjectFund
+        ? {}
+        : {
+            contributionAmount: toNum(contribAmount),
+            contributionFrequency: contribFreq,
+            shareOutDate,
+            loanInterestRate: toNum(loanInterest) || 5,
+            loanMaxMultiplier: parseInt(loanMultiplier) || 2,
+          };
+
       const payload = {
         name: groupName.trim(),
         description: groupDesc.trim(),
         groupType,
         avatar: groupAvatar || undefined,
-        contributionAmount: toNum(contribAmount),
-        contributionFrequency: contribFreq,
-        shareOutDate,
-        loanInterestRate: toNum(loanInterest) || 5,
-        loanMaxMultiplier: parseInt(loanMultiplier) || 2,
+        ...cycleFields,
+        projects: isProjectFund
+          ? namedProjects.map((p) => ({
+              name: p.name.trim(),
+              targetAmount: toNum(p.target) > 0 ? toNum(p.target) : null,
+            }))
+          : undefined,
         constitution,
         treasurerPhone: treasurerPhone ? `+260${treasurerPhone}` : undefined,
         secretaryPhone: secretaryPhone ? `+260${secretaryPhone}` : undefined,
@@ -564,7 +643,19 @@ export default function CreateGroup() {
             <Card padding={18}>
               <RRow label="Name" value={groupName} colors={colors} />
               <RRow label="Type" value={typeLabel} colors={colors} />
-              <RRow label="Cycle" value={cycleDuration} colors={colors} />
+              {isProjectFund ? (
+                <RRow
+                  label="Saving for"
+                  value={
+                    namedProjects.length === 1
+                      ? namedProjects[0].name.trim()
+                      : `${namedProjects.length} projects`
+                  }
+                  colors={colors}
+                />
+              ) : (
+                <RRow label="Cycle" value={cycleDuration} colors={colors} />
+              )}
               <RRow
                 label="Registration fee"
                 value={`K100.00 paid · ${networkKnown ? payerAccount.network : "Mobile money"}`}
@@ -598,14 +689,21 @@ export default function CreateGroup() {
 
   const groupTypeLabel = GROUP_TYPES.find((t) => t.value === groupType)?.label ?? "";
   const thresholdLabel = APPROVAL_THRESHOLDS.find((t) => t.value === approvalThreshold)?.label ?? "";
-  const activePermCount = Object.values(permissions).filter(Boolean).length;
+  // A project-fund group never lends and never shares out, so voting on either
+  // is a permission over something that cannot happen.
+  const permissionItems = isProjectFund
+    ? PERMISSION_ITEMS.filter(
+        (p) => p.key !== "loanApprovals" && p.key !== "shareOutApprovals"
+      )
+    : PERMISSION_ITEMS;
+  const activePermCount = permissionItems.filter((p) => permissions[p.key]).length;
 
   // ─── Main render ─────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["top"]} testID="create-group-screen">
       <ScreenHeader
-        title={STEP_TITLES[step - 1]}
+        title={(isProjectFund ? PROJECT_FUND_STEP_TITLES : STEP_TITLES)[step - 1]}
         onBack={step > 1 ? () => goToStep(prevStep(step)) : undefined}
       />
 
@@ -653,7 +751,13 @@ export default function CreateGroup() {
                   })}
                 </View>
                 {errors.groupType ? <Text style={[styles.errText, { color: colors.danger }]}>{errors.groupType}</Text> : null}
-                {groupType && !lendingAvailable ? (
+                {isProjectFund ? (
+                  <Text style={[styles.fieldHint, { color: colors.textMuted, marginTop: 8 }]}>
+                    Members give what they choose, whenever they choose, toward a project you
+                    name — so there is no set amount, no deadline, no late penalty, no loans
+                    and no share-out. You&apos;ll add the first project next.
+                  </Text>
+                ) : groupType && !lendingAvailable ? (
                   <Text style={[styles.fieldHint, { color: colors.textMuted, marginTop: 8 }]}>
                     This type saves together without lending, so there are no loan rules to set.
                     Members contribute and share out at the end of the cycle.
@@ -688,8 +792,108 @@ export default function CreateGroup() {
               </>
             )}
 
+            {/* ─── STEP 2a — Savings projects (project-fund types) ────────────── */}
+            {step === 2 && isProjectFund && (
+              <>
+                <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 22, marginBottom: 20 }}>
+                  Name what the group is raising money for. Members pick one of these every
+                  time they give, so the money is always traceable to what it was given for.
+                  Add at least one now — you can add more later.
+                </Text>
+
+                {projects.map((p, i) => {
+                  const err = errors[`project-${p.key}`];
+                  return (
+                    <View key={p.key} style={{ marginBottom: 18 }}>
+                      <View style={styles.projectHeadRow}>
+                        <FL text={`Project ${i + 1}`} colors={colors} style={{ marginBottom: 0 }} />
+                        {projects.length > 1 && (
+                          <Pressable
+                            onPress={() => removeProjectRow(p.key)}
+                            hitSlop={8}
+                            testID={`remove-project-${i}`}
+                          >
+                            <X size={16} color={colors.textMuted} />
+                          </Pressable>
+                        )}
+                      </View>
+                      <TextInput
+                        style={[
+                          styles.inputField,
+                          {
+                            color: colors.textMain,
+                            backgroundColor: colors.surface,
+                            borderColor: err ? colors.danger : colors.border,
+                            marginTop: 8,
+                          },
+                        ]}
+                        value={p.name}
+                        onChangeText={(t) => updateProject(p.key, { name: t.slice(0, 80) })}
+                        placeholder="e.g. Church building"
+                        placeholderTextColor={colors.textMuted}
+                        testID={`project-name-${i}`}
+                      />
+                      <View
+                        style={[
+                          styles.amountWrap,
+                          {
+                            backgroundColor: colors.surface,
+                            borderColor: err ? colors.danger : colors.border,
+                            marginTop: 10,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.currency, { color: colors.primary }]}>K</Text>
+                        <TextInput
+                          style={[styles.amountInput, { color: colors.textMain }]}
+                          value={p.target}
+                          onChangeText={(t) =>
+                            handleNumericInput(t, (v) => updateProject(p.key, { target: v }))
+                          }
+                          keyboardType={Platform.OS === "ios" ? "decimal-pad" : "numeric"}
+                          placeholder="Goal (optional)"
+                          placeholderTextColor={colors.textMuted}
+                          testID={`project-target-${i}`}
+                        />
+                      </View>
+                      {err ? (
+                        <Text style={[styles.errText, { color: colors.danger }]}>{err}</Text>
+                      ) : (
+                        <Text style={[styles.fieldHint, { color: colors.textMuted, marginTop: 6 }]}>
+                          Leave the goal blank if you are simply collecting until it&apos;s enough.
+                        </Text>
+                      )}
+                    </View>
+                  );
+                })}
+
+                {errors.projects ? (
+                  <Text style={[styles.errText, { color: colors.danger }]}>{errors.projects}</Text>
+                ) : null}
+
+                {projects.length < MAX_PROJECTS && (
+                  <Pressable
+                    onPress={addProjectRow}
+                    style={[styles.addProjectBtn, { borderColor: colors.primary }]}
+                    testID="add-project-btn"
+                  >
+                    <Plus size={16} color={colors.primary} />
+                    <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 13 }}>
+                      Add another project
+                    </Text>
+                  </Pressable>
+                )}
+
+                <View style={[styles.infoNote, { backgroundColor: colors.primarySoft }]}>
+                  <Text style={{ color: colors.primary, fontSize: 13, lineHeight: 20 }}>
+                    After the group is created, only the Chairperson can open a new project.
+                  </Text>
+                </View>
+              </>
+            )}
+
             {/* ─── STEP 2 — Contribution Setup ────────────────────────────────── */}
-            {step === 2 && (
+            {step === 2 && !isProjectFund && (
               <>
                 <FL text="Contribution frequency" colors={colors} />
                 <View style={styles.chipsRow}>
@@ -1122,13 +1326,13 @@ export default function CreateGroup() {
 
                 <FL text="Governance permissions" colors={colors} style={{ marginTop: 20 }} />
                 <Card padding={4} style={{ marginTop: 4 }}>
-                  {PERMISSION_ITEMS.map((p, i) => (
+                  {permissionItems.map((p, i) => (
                     <Pressable
                       key={p.key}
                       onPress={() => setPermissions((prev) => ({ ...prev, [p.key]: !prev[p.key] }))}
                       style={[
                         styles.optionRow,
-                        i < PERMISSION_ITEMS.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
+                        i < permissionItems.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
                       ]}
                       testID={`permission-${p.key}`}
                     >
@@ -1152,6 +1356,23 @@ export default function CreateGroup() {
                   <RRow label="Avatar" value={groupAvatar ? "Photo selected" : "None"} colors={colors} last />
                 </RC>
 
+                {isProjectFund ? (
+                  <RC title="Saving for" onEdit={() => goToStep(2)} colors={colors} style={{ marginTop: 14 }}>
+                    {namedProjects.map((p, i) => (
+                      <RRow
+                        key={p.key}
+                        label={p.name.trim()}
+                        value={
+                          toNum(p.target) > 0 ? `Goal ${formatZMW(toNum(p.target))}` : "No goal set"
+                        }
+                        colors={colors}
+                        last={i === namedProjects.length - 1}
+                      />
+                    ))}
+                  </RC>
+                ) : null}
+
+                {!isProjectFund && (
                 <RC title="Contributions" onEdit={() => goToStep(2)} colors={colors} style={{ marginTop: 14 }}>
                   <RRow label="Frequency" value={contribFreq} colors={colors} />
                   <RRow label="Amount" value={`K ${contribAmount || "0"}`} colors={colors} />
@@ -1163,7 +1384,9 @@ export default function CreateGroup() {
                   />
                   <RRow label="Late penalty" value={lateContribEnabled ? lateContribPenaltyType === "flat" ? `K${lateContribFlatAmount} flat fee` : `${lateContributionPenaltyRate}% per day (max 30%)` : "None"} colors={colors} last />
                 </RC>
+                )}
 
+                {!isProjectFund && (
                 <RC
                   title="Loans"
                   onEdit={() => goToStep(lendingAvailable ? 3 : 1)}
@@ -1200,6 +1423,7 @@ export default function CreateGroup() {
                     </>
                   )}
                 </RC>
+                )}
 
                 <RC title="Governance" onEdit={() => goToStep(4)} colors={colors} style={{ marginTop: 14 }}>
                   <RRow label="Chairperson" value="You (group founder)" colors={colors} />
@@ -1530,6 +1754,21 @@ const styles = StyleSheet.create({
   },
   statusPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
   infoNote: { marginTop: 20, padding: 14, borderRadius: 14 },
+  projectHeadRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  addProjectBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+  },
   avatarWrap: { alignSelf: "flex-start" },
   avatarImg: { width: 88, height: 88, borderRadius: 44 },
   avatarPlaceholder: {

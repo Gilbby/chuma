@@ -13,7 +13,7 @@ import { getTransactions } from "@/src/services/transactions";
 import { getSavingsTrend, getGroupReport, GroupReport } from "@/src/services/reports";
 import { getRepaymentRate, getSavingsGrowth } from "@/src/services/groupStats";
 import { formatZMW } from "@/src/utils/currency";
-import { Group, Loan, TxnItem } from "@/src/types";
+import { Group, Loan, TxnItem, isProjectFundType } from "@/src/types";
 import { exportTransactionsPdf, exportTransactionsCsv } from "@/src/utils/exports";
 import { TrendingUp, TrendingDown, Users, Banknote, Download } from "lucide-react-native";
 import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
@@ -87,6 +87,11 @@ export default function Reports() {
   const report = primaryGroup?.id ? fetchedReport : null;
 
   const groupRepayment = primaryGroup ? getRepaymentRate(primaryGroup, loans) : 0;
+
+  // A project-fund group (church) has no loans and no share-out, so the loan
+  // charts and the share-out record are replaced by what it does have: projects.
+  const projectFund = isProjectFundType(primaryGroup?.groupType);
+  const projectRows = primaryGroup?.projects ?? [];
 
   const savingsGrowthPct = getSavingsGrowth(primaryGroup);
 
@@ -179,14 +184,27 @@ export default function Reports() {
             colors={colors}
           />
           <View style={{ width: 12 }} />
-          <KpiCard
-            icon={<Banknote size={18} color={colors.primary} />}
-            label="Loans issued"
-            value={formatZMW(report?.loansIssuedThisQuarter ?? 0, { compact: true })}
-            sub="this quarter"
-            colors={colors}
-          />
+          {/* A project-fund group never lends, so "loans issued" and "default
+              rate" would only ever report zero. Retention takes the slot. */}
+          {projectFund ? (
+            <KpiCard
+              icon={<Users size={18} color={colors.info} />}
+              label="Member retention"
+              value={`${avgRetention}%`}
+              sub="last 12 months"
+              colors={colors}
+            />
+          ) : (
+            <KpiCard
+              icon={<Banknote size={18} color={colors.primary} />}
+              label="Loans issued"
+              value={formatZMW(report?.loansIssuedThisQuarter ?? 0, { compact: true })}
+              sub="this quarter"
+              colors={colors}
+            />
+          )}
         </View>
+        {!projectFund && (
         <View style={[styles.kpiRow, { marginTop: 12 }]}>
           <KpiCard
             icon={<TrendingDown size={18} color={colors.danger} />}
@@ -205,14 +223,41 @@ export default function Reports() {
             colors={colors}
           />
         </View>
+        )}
 
         {/* The group's own record, ahead of the charts and outside them. The
             share-out screen clears itself for the next cycle the moment the last
             member is paid, so this list is the permanent answer to who got what —
             a roll call of people and amounts, not a statistic. */}
-        <View style={{ marginTop: 22 }}>
-          <ShareOutHistory groupId={primaryGroup?.id} />
-        </View>
+        {!projectFund && (
+          <View style={{ marginTop: 22 }}>
+            <ShareOutHistory groupId={primaryGroup?.id} />
+          </View>
+        )}
+
+        {/* What the money is being raised for — the equivalent question in a
+            project-fund group, and the one members actually bring here. */}
+        {projectFund && projectRows.length > 0 && (
+          <Card padding={20} style={{ marginTop: 18 }}>
+            <Text style={[styles.cardTitle, { color: colors.textMain }]}>Projects</Text>
+            <Text style={[styles.cardSub, { color: colors.textMuted }]}>
+              Raised so far · {primaryGroup?.name ?? ""}
+            </Text>
+            <View style={{ marginTop: 14 }}>
+              {projectRows.map((p) => (
+                <View key={p.id} style={[styles.rowBetween, { marginTop: 10 }]}>
+                  <Text style={{ color: colors.textMain, fontWeight: "600", flex: 1 }}>
+                    {p.name}
+                  </Text>
+                  <Text style={{ color: colors.textMain, fontWeight: "700" }}>
+                    {formatZMW(p.collected)}
+                    {p.targetAmount ? ` / ${formatZMW(p.targetAmount)}` : ""}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </Card>
+        )}
 
         {/* Savings trend chart */}
         <Card padding={20} style={{ marginTop: 18 }}>
@@ -225,7 +270,8 @@ export default function Reports() {
           </View>
         </Card>
 
-        {/* Loan analytics */}
+        {/* Loan analytics — nothing to chart in a group that never lends. */}
+        {!projectFund && (
         <Card padding={20} style={{ marginTop: 14 }}>
           <Text style={[styles.cardTitle, { color: colors.textMain }]}>Loans issued</Text>
           <Text style={[styles.cardSub, { color: colors.textMuted }]}>By quarter (K thousands)</Text>
@@ -233,8 +279,10 @@ export default function Reports() {
             <BarChart data={loanAnalytics} width={chartW} height={170} />
           </View>
         </Card>
+        )}
 
         {/* Repayment rate for this group */}
+        {!projectFund && (
         <Card padding={20} style={{ marginTop: 14, marginBottom: 24 }}>
           <Text style={[styles.cardTitle, { color: colors.textMain }]}>Repayment rate</Text>
           <Text style={[styles.cardSub, { color: colors.textMuted }]}>
@@ -264,6 +312,7 @@ export default function Reports() {
             </View>
           </View>
         </Card>
+        )}
       </ScrollView>
       <ExportSheet
         visible={exportOpen}

@@ -1,6 +1,6 @@
 import { api } from "./apiClient";
 import { getCurrentUser } from "@/src/utils/currentUser";
-import { Group } from "@/src/types";
+import { Group, GroupProject } from "@/src/types";
 import { phoneKey } from "@/src/utils/invites";
 
 function mapGroup(raw: any, currentUserId?: string): Group {
@@ -34,10 +34,21 @@ function mapGroup(raw: any, currentUserId?: string): Group {
         (m: any) => String(m.userId) === String(currentUserId) && m.status === "active"
       )
     : undefined;
+  // Projects come back as subdocs with _id, like members. Empty for every type
+  // that is not a project fund, so screens can read it without a null check.
+  const projects: GroupProject[] = (raw.projects ?? []).map((p: any) => ({
+    ...p,
+    id: String(p._id ?? p.id ?? ""),
+    targetAmount: p.targetAmount ?? null,
+    collected: p.collected ?? 0,
+    status: p.status ?? "active",
+  }));
+
   return {
     ...raw,
     id: String(raw._id),
     members,
+    projects,
     formerMembers,
     memberCount: members.filter((m: any) => m.status === "active").length,
     yourRole: mine?.role ?? "Member",
@@ -69,6 +80,28 @@ export async function acceptInvite(
 
 export async function createGroup(payload: any): Promise<{ group: any; transaction?: any }> {
   return api("/groups", { method: "POST", body: payload });
+}
+
+/**
+ * Add a savings project to a project-fund group (church). Chairperson only —
+ * the API refuses anyone else, and refuses group types that do not use
+ * projects at all.
+ */
+export async function addGroupProject(
+  groupId: string,
+  project: { name: string; targetAmount?: number | null }
+): Promise<GroupProject> {
+  const res = await api<{ project: any }>(`/groups/${groupId}/projects`, {
+    method: "POST",
+    body: { name: project.name, targetAmount: project.targetAmount ?? null },
+  });
+  return {
+    ...res.project,
+    id: String(res.project._id ?? res.project.id ?? ""),
+    targetAmount: res.project.targetAmount ?? null,
+    collected: res.project.collected ?? 0,
+    status: res.project.status ?? "active",
+  };
 }
 
 export async function payGroupFee(groupId: string, payerPhone?: string): Promise<any> {

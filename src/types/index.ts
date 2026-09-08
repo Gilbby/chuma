@@ -31,6 +31,29 @@ export type GroupType =
   | "church-group"
   | "investment-group";
 
+/**
+ * Types that collect toward NAMED PROJECTS instead of running a contribution
+ * cycle. A church group takes whatever members choose to give, whenever they
+ * give it, and spends it on the project it was given for — so it has no fixed
+ * amount, no frequency, no deadline, no late penalty, no loans and no
+ * share-out. What it has instead is `Group.projects`.
+ * Mirrors PROJECT_FUND_TYPES in the API's logic.service.js.
+ */
+export const PROJECT_FUND_TYPES: GroupType[] = ["church-group"];
+
+export const isProjectFundType = (t?: GroupType | "" | null): boolean =>
+  !!t && PROJECT_FUND_TYPES.includes(t);
+
+/** A thing the group is raising money for — "Church building", "Mission trip". */
+export interface GroupProject {
+  id: string;
+  name: string;
+  targetAmount: number | null; // null = no goal set
+  collected: number;
+  status: "active" | "completed" | "archived";
+  createdAt?: string;
+}
+
 // A repayment tier caps how long a loan may run based on its size. Loans are
 // matched to the first tier whose `maxAmount` covers the amount; the top tier
 // uses `maxAmount: null` to catch everything above the last band. This lets a
@@ -94,6 +117,10 @@ export interface Group {
   loanInterestRate: number; // % per month
   loanMaxMultiplier: number; // x of savings
   members: Member[];
+  /** Savings projects. Only project-fund types (church) have any — see
+   *  isProjectFundType. Always set by the service layer; optional so older
+   *  shapes still type. */
+  projects?: GroupProject[];
   /** Removed members, kept as history. Never counted as members of the group.
    *  Always set by the service layer; optional so older shapes still type. */
   formerMembers?: Member[];

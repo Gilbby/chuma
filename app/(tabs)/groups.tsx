@@ -17,7 +17,7 @@ import {
   type GroupInvite,
 } from "@/src/services/groups";
 import { getCurrentUser } from "@/src/utils/currentUser";
-import { Group, Member } from "@/src/types";
+import { Group, Member, isProjectFundType } from "@/src/types";
 import { formatZMW } from "@/src/utils/currency";
 import { formatDate } from "@/src/utils/date";
 import { invitedAgo, inviteDisplayName, pendingInvites } from "@/src/utils/invites";
@@ -264,7 +264,9 @@ export default function Groups() {
                         style={[styles.groupSub, { color: colors.textMuted }]}
                         numberOfLines={1}
                       >
-                        {g.contributionFrequency} · {formatZMW(g.contributionAmount)}
+                        {isProjectFundType(g.groupType)
+                          ? projectSubtitle(g)
+                          : `${g.contributionFrequency} · ${formatZMW(g.contributionAmount)}`}
                       </Text>
                     </View>
                   </View>
@@ -275,22 +277,35 @@ export default function Groups() {
               <View style={styles.stats}>
                 <Stat label="Pool" value={formatZMW(g.totalSavings, { compact: true })} muted={colors.textMuted} main={colors.textMain} />
                 <Stat label="Members" value={String(g.memberCount)} muted={colors.textMuted} main={colors.textMain} />
-                <Stat label="Loans out" value={formatZMW(g.loanCirculation, { compact: true })} muted={colors.textMuted} main={colors.textMain} />
+                {isProjectFundType(g.groupType) ? (
+                  <Stat
+                    label="Projects"
+                    value={String((g.projects ?? []).filter((p) => p.status === "active").length)}
+                    muted={colors.textMuted}
+                    main={colors.textMain}
+                  />
+                ) : (
+                  <Stat label="Loans out" value={formatZMW(g.loanCirculation, { compact: true })} muted={colors.textMuted} main={colors.textMain} />
+                )}
               </View>
 
-              <View style={{ marginTop: 14 }}>
-                <View style={styles.rowBetween}>
-                  <Text style={[styles.cycleLabel, { color: colors.textMuted }]}>
-                    Cycle progress
-                  </Text>
-                  <Text style={[styles.cycleValue, { color: colors.textMain }]}>
-                    {Math.round(g.cycleProgress * 100)}%
-                  </Text>
+              {/* A project-fund group has no cycle to be partway through —
+                  its progress lives on each project, inside the group. */}
+              {!isProjectFundType(g.groupType) && (
+                <View style={{ marginTop: 14 }}>
+                  <View style={styles.rowBetween}>
+                    <Text style={[styles.cycleLabel, { color: colors.textMuted }]}>
+                      Cycle progress
+                    </Text>
+                    <Text style={[styles.cycleValue, { color: colors.textMain }]}>
+                      {Math.round(g.cycleProgress * 100)}%
+                    </Text>
+                  </View>
+                  <View style={{ marginTop: 6 }}>
+                    <ProgressBar progress={g.cycleProgress} />
+                  </View>
                 </View>
-                <View style={{ marginTop: 6 }}>
-                  <ProgressBar progress={g.cycleProgress} />
-                </View>
-              </View>
+              )}
 
               <View style={{ flexDirection: "row", marginTop: 14 }}>
                 <StatusBadge label={g.yourRole} variant="primary" />
@@ -376,6 +391,14 @@ const PendingInvitesNote = ({
       )}
     </View>
   );
+};
+
+/** What a project-fund group shows where a cycle group shows its dues. */
+const projectSubtitle = (g: Group) => {
+  const open = (g.projects ?? []).filter((p) => p.status === "active");
+  if (open.length === 0) return "No open projects";
+  if (open.length === 1) return `Saving for ${open[0].name}`;
+  return `${open.length} projects`;
 };
 
 const Stat = ({

@@ -31,6 +31,7 @@ import {
   resendInvite,
   cancelInvite,
   requestMemberRemoval,
+  addGroupProject,
 } from "@/src/services/groups";
 import type { Role } from "@/src/types";
 import { getApprovals } from "@/src/services/approvals";
@@ -45,7 +46,7 @@ import {
   pendingInvites,
 } from "@/src/utils/invites";
 import { isGroupLocked, getMonthsOwed, getAmountOwed } from "@/src/services/groupFees";
-import { Member, Group, Approval, TxnItem, Loan } from "@/src/types";
+import { Member, Group, Approval, TxnItem, Loan, isProjectFundType } from "@/src/types";
 import * as Clipboard from "expo-clipboard";
 import {
   Users,
@@ -71,10 +72,18 @@ import {
   X,
   Clock,
   History,
+  Target,
 } from "lucide-react-native";
 import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
-type TabKey = "members" | "contributions" | "loans" | "approvals" | "reports" | "governance";
+type TabKey =
+  | "members"
+  | "projects"
+  | "contributions"
+  | "loans"
+  | "approvals"
+  | "reports"
+  | "governance";
 
 export default function GroupDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -92,6 +101,12 @@ export default function GroupDetails() {
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null);
   // member row id whose removal is being proposed
   const [removingId, setRemovingId] = useState<string | null>(null);
+  // Add-a-project form (project-fund groups; Chairperson only)
+  const [projectFormOpen, setProjectFormOpen] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [projectTarget, setProjectTarget] = useState("");
+  const [projectError, setProjectError] = useState("");
+  const [addingProject, setAddingProject] = useState(false);
 
   const insets = useSafeAreaInsets();
 
@@ -273,6 +288,32 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
     [group?.name, id, load]
   );
 
+  const onAddProject = useCallback(async () => {
+    const name = projectName.trim();
+    if (!name) {
+      setProjectError("Give the project a name");
+      return;
+    }
+    const target = parseFloat(projectTarget) || 0;
+    if (projectTarget.trim() && target <= 0) {
+      setProjectError("Goal must be more than 0, or leave it blank");
+      return;
+    }
+    setAddingProject(true);
+    setProjectError("");
+    try {
+      await addGroupProject(id, { name, targetAmount: target > 0 ? target : null });
+      setProjectName("");
+      setProjectTarget("");
+      setProjectFormOpen(false);
+      await refreshGroup();
+    } catch (e: any) {
+      setProjectError(e?.message || "Could not add the project. Please try again.");
+    } finally {
+      setAddingProject(false);
+    }
+  }, [id, projectName, projectTarget, refreshGroup]);
+
   const cycleStatus = useMemo(() =>
     (group?.members ?? []).filter((m: any) => m.status !== "pending").map((m, i) => {
       const seed = (i * 7) % 10;
@@ -314,6 +355,16 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
   // enforces on /invite (requireGroupAdmin).
   const isAdmin = effectiveRole !== "Member";
 
+  // Church-style group: gives toward named projects. No cycle, no dues, no
+  // loans, no penalties and no share-out — so none of that is shown here.
+  const isProjectFund = isProjectFundType(group.groupType);
+  const projects = group.projects ?? [];
+  const activeProjects = projects.filter((p) => p.status === "active");
+  const totalRaised = projects.reduce((sum, p) => sum + p.collected, 0);
+  // Opening a project decides what members' money can be given toward, so it
+  // is the Chairperson's call — the API enforces the same.
+  const canAddProject = isProjectFund && effectiveRole === "Chairperson";
+
   const paidCount = cycleStatus.filter((c) => c.status === "paid").length;
   const overdueCount = cycleStatus.filter((c) => c.status === "overdue").length;
   const pendingCount = cycleStatus.filter((c) => c.status === "pending").length;
@@ -338,6 +389,14 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
             >
               <Plus size={18} color="#fff" strokeWidth={2.4} />
             </Pressable>
+          ) : tab === "projects" && canAddProject ? (
+            <Pressable
+              style={{ width: 36, height: 36, borderRadius: 11, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" }}
+              onPress={() => { setProjectFormOpen((v) => !v); setProjectError(""); }}
+              testID="projects-add-btn"
+            >
+              <Plus size={18} color="#fff" strokeWidth={2.4} />
+            </Pressable>
           ) : undefined
         }
       />
@@ -350,12 +409,18 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
         {/* Financial overview */}
         <View style={{ paddingHorizontal: 20 }}>
           <Card padding={20} style={{ backgroundColor: colors.primary, borderColor: colors.primary }}>
-            <Text style={styles.heroLabel}>Total group savings</Text>
+            <Text style={styles.heroLabel}>
+              {isProjectFund ? "Total raised" : "Total group savings"}
+            </Text>
             <Text style={styles.heroAmount}>{formatZMW(group.totalSavings)}</Text>
             <View style={styles.heroRow}>
               <HeroStat label="Wallet" value={formatZMW(group.walletBalance, { compact: true })} />
               <View style={styles.divider} />
-              <HeroStat label="Loans out" value={formatZMW(group.loanCirculation, { compact: true })} />
+              {isProjectFund ? (
+                <HeroStat label="Projects" value={String(activeProjects.length)} />
+              ) : (
+                <HeroStat label="Loans out" value={formatZMW(group.loanCirculation, { compact: true })} />
+              )}
               <View style={styles.divider} />
               <HeroStat label="Members" value={String(group.memberCount)} />
             </View>
@@ -364,6 +429,27 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
 
         {/* Rules summary */}
         <View style={{ paddingHorizontal: 20, marginTop: 14 }}>
+          {isProjectFund ? (
+            <Card padding={16}>
+              <RuleRow
+                icon={<CircleDollarSign size={18} color={colors.primary} />}
+                label="Giving"
+                value="Any amount, any time"
+                colors={colors}
+              />
+              <View style={[styles.sep, { backgroundColor: colors.border }]} />
+              <RuleRow
+                icon={<Target size={18} color={colors.primary} />}
+                label="Open projects"
+                value={
+                  activeProjects.length === 1
+                    ? activeProjects[0].name
+                    : `${activeProjects.length} projects`
+                }
+                colors={colors}
+              />
+            </Card>
+          ) : (
           <Card padding={16}>
             <RuleRow
               icon={<CircleDollarSign size={18} color={colors.primary} />}
@@ -386,9 +472,12 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
               colors={colors}
             />
           </Card>
+          )}
         </View>
 
-        {/* Cycle progress */}
+        {/* Cycle progress — a project-fund group has no cycle; progress is per
+            project, on the Projects tab. */}
+        {!isProjectFund && (
         <View style={{ paddingHorizontal: 20, marginTop: 14 }}>
           <Card padding={16}>
             <View style={styles.rowBetween}>
@@ -404,6 +493,7 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
             </View>
           </Card>
         </View>
+        )}
 
         {/* Tabs */}
         <ScrollView
@@ -411,15 +501,23 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabsRow}
         >
-          {(
-            [
-              { k: "members", label: "Members" },
-              { k: "contributions", label: "Contributions" },
-              { k: "loans", label: "Loans" },
-              { k: "approvals", label: "Approvals" },
-              { k: "reports", label: "Reports" },
-              { k: "governance", label: "Governance" },
-            ] as { k: TabKey; label: string }[]
+          {(isProjectFund
+            ? ([
+                { k: "members", label: "Members" },
+                { k: "projects", label: "Projects" },
+                { k: "contributions", label: "Giving" },
+                { k: "approvals", label: "Approvals" },
+                { k: "reports", label: "Reports" },
+                { k: "governance", label: "Governance" },
+              ] as { k: TabKey; label: string }[])
+            : ([
+                { k: "members", label: "Members" },
+                { k: "contributions", label: "Contributions" },
+                { k: "loans", label: "Loans" },
+                { k: "approvals", label: "Approvals" },
+                { k: "reports", label: "Reports" },
+                { k: "governance", label: "Governance" },
+              ] as { k: TabKey; label: string }[])
           ).map((t) => {
             const active = tab === t.k;
             return (
@@ -560,7 +658,167 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
           </View>
         )}
 
-        {tab === "contributions" && (
+        {tab === "projects" && (
+          <View style={{ paddingHorizontal: 20 }}>
+            {projectFormOpen && canAddProject && (
+              <Card padding={16} style={{ marginBottom: 12 }}>
+                <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+                  NEW PROJECT
+                </Text>
+                <TextInput
+                  style={[
+                    styles.projectInput,
+                    {
+                      color: colors.textMain,
+                      backgroundColor: colors.surfaceSecondary,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  value={projectName}
+                  onChangeText={(t) => { setProjectName(t.slice(0, 80)); setProjectError(""); }}
+                  placeholder="e.g. Church building"
+                  placeholderTextColor={colors.textMuted}
+                  testID="project-name-input"
+                />
+                <View style={{ height: 10 }} />
+                <TextInput
+                  style={[
+                    styles.projectInput,
+                    {
+                      color: colors.textMain,
+                      backgroundColor: colors.surfaceSecondary,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  value={projectTarget}
+                  onChangeText={(t) => { setProjectTarget(t.replace(/[^0-9.]/g, "")); setProjectError(""); }}
+                  keyboardType={Platform.OS === "ios" ? "decimal-pad" : "numeric"}
+                  placeholder="Goal in Kwacha (optional)"
+                  placeholderTextColor={colors.textMuted}
+                  testID="project-target-input"
+                />
+                {projectError ? (
+                  <Text style={{ color: colors.danger, fontSize: 12, marginTop: 8 }}>
+                    {projectError}
+                  </Text>
+                ) : null}
+                <View style={{ height: 12 }} />
+                <Button
+                  label="Add project"
+                  loading={addingProject}
+                  disabled={addingProject}
+                  onPress={onAddProject}
+                  testID="project-submit-btn"
+                />
+              </Card>
+            )}
+
+            {projects.length === 0 ? (
+              <Card padding={20}>
+                <Text style={{ color: colors.textMain, fontWeight: "700" }}>No projects yet</Text>
+                <Text style={{ color: colors.textMuted, marginTop: 6, fontSize: 13, lineHeight: 20 }}>
+                  {canAddProject
+                    ? "Add what the group is raising money for. Members pick a project every time they give."
+                    : "The Chairperson hasn't opened a project yet. Members give toward a named project, so there is nothing to give to right now."}
+                </Text>
+              </Card>
+            ) : (
+              <Card padding={16}>
+                <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+                  SAVING FOR
+                </Text>
+                {projects.map((p, i) => (
+                  <View
+                    key={p.id}
+                    style={{
+                      paddingVertical: 12,
+                      borderBottomWidth: i < projects.length - 1 ? 1 : 0,
+                      borderBottomColor: colors.border,
+                    }}
+                    testID={`project-row-${p.id}`}
+                  >
+                    <View style={styles.rowBetween}>
+                      <Text style={{ color: colors.textMain, fontWeight: "700", fontSize: 15, flex: 1 }}>
+                        {p.name}
+                      </Text>
+                      <Text style={{ color: colors.textMain, fontWeight: "700", fontSize: 14 }}>
+                        {formatZMW(p.collected)}
+                      </Text>
+                    </View>
+                    {p.targetAmount ? (
+                      <View style={{ marginTop: 8 }}>
+                        <ProgressBar progress={Math.min(1, p.collected / p.targetAmount)} />
+                        <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 6 }}>
+                          {Math.round((p.collected / p.targetAmount) * 100)}% of{" "}
+                          {formatZMW(p.targetAmount)} goal
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 4 }}>
+                        No goal set · raised so far
+                      </Text>
+                    )}
+                  </View>
+                ))}
+                <View style={[styles.rowBetween, { marginTop: 14 }]}>
+                  <Text style={{ color: colors.textMuted, fontSize: 13, fontWeight: "600" }}>
+                    Total raised
+                  </Text>
+                  <Text style={{ color: colors.textMain, fontWeight: "800", fontSize: 15 }}>
+                    {formatZMW(totalRaised)}
+                  </Text>
+                </View>
+              </Card>
+            )}
+
+            <View style={{ height: 14 }} />
+            <Button
+              label="Give toward a project"
+              onPress={() => router.push("/contribute")}
+              testID="group-give-btn"
+            />
+          </View>
+        )}
+
+        {tab === "contributions" && isProjectFund && (
+          <View style={{ paddingHorizontal: 20 }}>
+            <Button
+              label="Give toward a project"
+              onPress={() => router.push("/contribute")}
+              testID="group-contribute-btn"
+            />
+            <View style={{ height: 16 }} />
+            <Card padding={16}>
+              <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+                RECENT GIVING
+              </Text>
+              {groupTxn.filter((t) => t.type === "contribution").length === 0 ? (
+                <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
+                  Nothing given yet.
+                </Text>
+              ) : (
+                groupTxn
+                  .filter((t) => t.type === "contribution")
+                  .slice(0, 10)
+                  .map((t) => (
+                    <View key={t.id} style={[styles.contribRow, { borderBottomColor: colors.border }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: colors.textMain, fontWeight: "600", fontSize: 14 }}>
+                          {t.note ?? "Contribution"}
+                        </Text>
+                        <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>{t.date}</Text>
+                      </View>
+                      <Text style={{ color: colors.textMain, fontWeight: "700" }}>
+                        {formatZMW(t.amount)}
+                      </Text>
+                    </View>
+                  ))
+              )}
+            </Card>
+          </View>
+        )}
+
+        {tab === "contributions" && !isProjectFund && (
           <View style={{ paddingHorizontal: 20 }}>
             <Button
               label="Make a contribution"
@@ -763,6 +1021,7 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
 
         {tab === "reports" && (
           <View style={{ paddingHorizontal: 20 }}>
+            {!isProjectFund && (
             <Pressable
               // The permanent record, and the first thing on the tab: "what did
               // we each get" is the question members bring here, and it is
@@ -791,7 +1050,8 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
                 </View>
               </Card>
             </Pressable>
-            <View style={{ height: 12 }} />
+            )}
+            {!isProjectFund && <View style={{ height: 12 }} />}
             <Pressable
               onPress={() => router.push({ pathname: "/reports", params: { groupId: id } })}
               testID="group-reports-btn"
@@ -839,6 +1099,10 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
                 </View>
               </Card>
             </Pressable>
+            {/* A project-fund group never shares out — there is no pot to
+                split and no forecast to make. */}
+            {!isProjectFund && (
+            <>
             <View style={{ height: 12 }} />
             <Pressable
               // Carry the group: the share-out screen resolves everything from
@@ -865,6 +1129,8 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
                 </View>
               </Card>
             </Pressable>
+            </>
+            )}
           </View>
         )}
 
@@ -1048,6 +1314,9 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
                     <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "700", letterSpacing: 1.2, marginTop: 20, marginBottom: 8 }}>
                       ADMIN ACTIONS
                     </Text>
+                    {/* Nothing is due in a project-fund group, so there is no
+                        obligation to breach and no penalty to issue. */}
+                    {!isProjectFund && (
                     <Card padding={14} style={{ marginBottom: 10, backgroundColor: colors.surface }}>
                       <Pressable
                         style={{ flexDirection: "row", alignItems: "center" }}
@@ -1079,6 +1348,7 @@ The group's other admins vote on this. ${member.name} does not. If it carries, t
                         <ChevronRight size={18} color={colors.textMuted} />
                       </Pressable>
                     </Card>
+                    )}
                     {/* Removing someone moves their money, so it is a proposal,
                         not an action: the other admins vote and the savings are
                         refunded on the way out. Never removes anyone on tap. */}
@@ -1683,6 +1953,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   sectionLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 1.2, marginBottom: 10 },
+  projectInput: {
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    fontSize: 15,
+  },
   contribRow: {
     flexDirection: "row",
     alignItems: "center",

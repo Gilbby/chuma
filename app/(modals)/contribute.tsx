@@ -29,7 +29,7 @@ import { checkout } from "@/src/services/payments";
 import { api } from "@/src/services/apiClient";
 import { getCurrentUser } from "@/src/utils/currentUser";
 import { detectNetwork } from "@/src/services/mobileMoney";
-import { Group, Penalty, Loan } from "@/src/types";
+import { Group, Penalty, Loan, isProjectFundType } from "@/src/types";
 import { formatZMW } from "@/src/utils/currency";
 import {
   Check,
@@ -67,6 +67,12 @@ export default function Contribute() {
   const [groupsError, setGroupsError] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [showGroupPicker, setShowGroupPicker] = useState(false);
+
+  // Project-fund groups (church): money is given TOWARD something, so the
+  // payment names the project it belongs to. Nothing is owed and nothing is
+  // scheduled — the member types whatever they are giving.
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
 
   // Outstanding obligations for the SELECTED group. A member can owe in several
   // groups, but one deposit settles one group's dues.
@@ -166,8 +172,20 @@ export default function Contribute() {
   const obligationsLoading =
     !!selectedGroup?.id && obligationsFor !== selectedGroup.id;
 
+  // ── Project-fund groups ─────────────────────────────────────────────────────
+  const isProjectFund = isProjectFundType(selectedGroup?.groupType);
+  const openProjects = (selectedGroup?.projects ?? []).filter(
+    (p) => p.status === "active"
+  );
+  // Derived, not stored: a selection left over from the group they switched
+  // away from matches nothing here, and a lone open project needs no choosing.
+  const selectedProject =
+    openProjects.find((p) => p.id === projectId) ??
+    (openProjects.length === 1 ? openProjects[0] : null);
+
   // ── Amounts ─────────────────────────────────────────────────────────────────
-  const savingsAmount = selectedGroup?.contributionAmount ?? 0;
+  // A project-fund group has no cycle amount: whatever they type IS the gift.
+  const savingsAmount = isProjectFund ? 0 : selectedGroup?.contributionAmount ?? 0;
 
   const loanChosen = (l: Loan): number => {
     const m = loanModes[l.id] ?? { mode: "installment" as LoanMode, custom: "" };
@@ -232,6 +250,9 @@ export default function Contribute() {
   // A loan in custom mode with no/zero amount would be an invalid obligation.
   const invalidLoan = loans.some((l) => loanChosen(l) <= 0);
   const belowBase = base > 0 && num > 0 && num < base;
+  // Nothing is given into an untagged pool: the API refuses a project-fund
+  // payment with no project, so the screen refuses it first.
+  const missingProject = isProjectFund && !selectedProject;
   const displayError =
     submitAttempted && num <= 0
       ? "Enter an amount to pay"
@@ -239,7 +260,15 @@ export default function Contribute() {
         ? `Minimum ${formatZMW(base)}: this covers your dues`
         : invalidLoan
           ? "Enter an amount for each loan"
-          : "";
+          : submitAttempted && missingProject
+            ? "Choose what you're giving toward"
+            : "";
+
+  // The savings leg the API is sent. A project-fund gift is the whole amount as
+  // a contribution — there is no cycle due for it to be a "top-up" above.
+  const savingsLeg = isProjectFund
+    ? { contribution: num, topup: 0 }
+    : { contribution: savingsAmount, topup };
 
   const repaymentsPayload = () =>
     loans
@@ -250,7 +279,7 @@ export default function Contribute() {
   // is no fee preview to fetch — mirror how the treasurer-confirmed cash path
   // priced nothing. Mobile money fetches the real server breakdown first.
   const goToConfirm = async () => {
-    if (num <= 0 || belowBase || invalidLoan) {
+    if (num <= 0 || belowBase || invalidLoan || missingProject) {
       setSubmitAttempted(true);
       return;
     }
@@ -355,7 +384,11 @@ export default function Contribute() {
                     testID="contribute-amount-input"
                   />
                 </View>
-                {base > 0 ? (
+                {isProjectFund ? (
+                  <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 6 }}>
+                    Give whatever you choose — there is no set amount in {selectedGroup.name}.
+                  </Text>
+                ) : base > 0 ? (
                   <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 6 }}>
                     Dues total {formatZMW(base)}
                     {topup > 0 ? ` · +${formatZMW(topup)} top-up` : " · raise to add a top-up"}
@@ -365,11 +398,87 @@ export default function Contribute() {
                   <Text style={[styles.errText, { color: colors.danger }]}>{displayError}</Text>
                 ) : null}
 
+                {/* Giving toward — project-fund groups pick a project instead
+                    of settling a list of dues. */}
+                {isProjectFund && (
+                  <>
+                    <Text style={[styles.label, { color: colors.textMuted, marginTop: 22 }]}>
+                      Giving toward
+                    </Text>
+                    {openProjects.length === 0 ? (
+                      <Card padding={16}>
+                        <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+                          {selectedGroup.name} has no open projects right now. The Chairperson
+                          adds them from the group screen.
+                        </Text>
+                      </Card>
+                    ) : (
+                      <>
+                        <Picker
+                          label="Project"
+                          value={selectedProject?.name ?? "Choose a project"}
+                          onPress={() => setShowProjectPicker((s) => !s)}
+                          colors={colors}
+                          testID="contribute-project-picker"
+                        />
+                        {showProjectPicker && (
+                          <Card padding={4} style={{ marginTop: 8 }}>
+                            {openProjects.map((p) => (
+                              <Pressable
+                                key={p.id}
+                                onPress={() => {
+                                  setProjectId(p.id);
+                                  setShowProjectPicker(false);
+                                  setSubmitAttempted(false);
+                                }}
+                                style={({ pressed }) => [
+                                  styles.option,
+                                  { backgroundColor: pressed ? colors.surfaceSecondary : "transparent" },
+                                ]}
+                                testID={`contribute-project-${p.id}`}
+                              >
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ color: colors.textMain, fontWeight: "500" }}>
+                                    {p.name}
+                                  </Text>
+                                  <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>
+                                    {formatZMW(p.collected)} raised
+                                    {p.targetAmount ? ` of ${formatZMW(p.targetAmount)}` : ""}
+                                  </Text>
+                                </View>
+                                {p.id === selectedProject?.id && (
+                                  <Check size={18} color={colors.primary} />
+                                )}
+                              </Pressable>
+                            ))}
+                          </Card>
+                        )}
+                        {selectedProject?.targetAmount ? (
+                          <View style={{ marginTop: 12 }}>
+                            <ProgressBar
+                              progress={Math.min(
+                                1,
+                                selectedProject.collected / selectedProject.targetAmount
+                              )}
+                            />
+                            <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 8 }}>
+                              {formatZMW(selectedProject.collected)} of{" "}
+                              {formatZMW(selectedProject.targetAmount)} raised
+                            </Text>
+                          </View>
+                        ) : null}
+                      </>
+                    )}
+                  </>
+                )}
+
                 {/* What you're paying */}
+                {!isProjectFund && (
                 <Text style={[styles.label, { color: colors.textMuted, marginTop: 22 }]}>
                   What you&apos;re paying
                 </Text>
-                {obligationsLoading ? (
+                )}
+                {isProjectFund ? null : obligationsLoading ? (
                   <Card padding={16}>
                     <ActivityIndicator color={colors.primary} />
                   </Card>
@@ -544,6 +653,8 @@ export default function Contribute() {
                           setAmount("");
                           setSubmitAttempted(false);
                           setShowGroupPicker(false);
+                          setShowProjectPicker(false);
+                          setProjectId(null);
                         }}
                         style={({ pressed }) => [
                           styles.option,
@@ -604,7 +715,9 @@ export default function Contribute() {
                   />
                 </View>
 
-                {/* Cycle progress */}
+                {/* Cycle progress — a project-fund group has no cycle to be
+                    partway through; its progress is per project, shown above. */}
+                {!isProjectFund && (
                 <View style={{ marginTop: 20 }}>
                   <Card padding={16}>
                     <View style={styles.rowBetween}>
@@ -623,6 +736,7 @@ export default function Contribute() {
                     </Text>
                   </Card>
                 </View>
+                )}
 
                 <View style={{ flex: 1, minHeight: 24 }} />
                 {pricingError ? (
@@ -637,6 +751,7 @@ export default function Contribute() {
                     num <= 0 ||
                     belowBase ||
                     invalidLoan ||
+                    missingProject ||
                     networkUnknown ||
                     pricingLoading ||
                     obligationsLoading
@@ -654,6 +769,13 @@ export default function Contribute() {
                   </Text>
                   <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
+                  {isProjectFund && selectedProject && (
+                    <ConfirmRow
+                      label={`Giving toward ${selectedProject.name}`}
+                      value={formatZMW(num)}
+                      colors={colors}
+                    />
+                  )}
                   {savingsAmount > 0 && (
                     <ConfirmRow label="Group saving" value={formatZMW(savingsAmount)} colors={colors} />
                   )}
@@ -668,7 +790,7 @@ export default function Contribute() {
                   {penalties.map((p) => (
                     <ConfirmRow key={p.id} label={p.reason} value={formatZMW(p.amount)} colors={colors} />
                   ))}
-                  {topup > 0 && (
+                  {!isProjectFund && topup > 0 && (
                     <ConfirmRow label="Top-up (extra savings)" value={formatZMW(topup)} colors={colors} />
                   )}
                   {!payCash && (
@@ -717,10 +839,11 @@ export default function Contribute() {
                     try {
                       const res = await checkout({
                         groupId: selectedGroup.id,
-                        contribution: savingsAmount,
-                        topup,
+                        contribution: savingsLeg.contribution,
+                        topup: savingsLeg.topup,
                         repayments: repaymentsPayload(),
                         penaltyIds: penalties.map((p) => p.id),
+                        projectId: selectedProject?.id,
                         paymentMethod: paymentMethodLabel,
                         payerPhone,
                       });

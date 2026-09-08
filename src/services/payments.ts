@@ -20,6 +20,9 @@ export type CheckoutPayload = {
   repayments?: { loanId: string; amount: number }[];
   /** Pending penalties to clear (all must be the caller's, same group). */
   penaltyIds?: string[];
+  /** Project-fund groups (church) only: which project the savings pay into.
+   *  Required by the API whenever the savings leg is above zero. */
+  projectId?: string;
   /** "MTN MoMo" | "Airtel Money" | "Zamtel Kwacha" | "Cash" | … */
   paymentMethod: string;
   payerPhone?: string;

@@ -40,7 +40,7 @@ import {
   isBalanceHidden,
   setBalanceHidden as setBalanceHiddenPref,
 } from "@/src/utils/biometrics";
-import { Group, Loan, Penalty, Notice, Approval, TxnItem } from "@/src/types";
+import { Group, Loan, Penalty, Notice, Approval, TxnItem, isProjectFundType } from "@/src/types";
 import { computeShareOut, estimateGroupProfit, getMyShare } from "@/src/services/shareOut";
 import { formatZMW } from "@/src/utils/currency";
 import { useRole } from "@/src/contexts/RoleContext";
@@ -276,6 +276,10 @@ export default function Home() {
     groups.length > 0 &&
     !groups.some((g) => g.constitution?.internalLendingEnabled !== false);
 
+  // Every group they are in gives toward projects: nothing here ever shares out.
+  const projectFundOnly =
+    groups.length > 0 && groups.every((g) => isProjectFundType(g.groupType));
+
   const quickActions = [
     { label: "Saving", icon: PiggyBank, route: "/contribute" },
     savingsOnly
@@ -284,10 +288,14 @@ export default function Home() {
     // Repay now lives on the unified payment screen (loans show among the dues),
     // reached from Payments — so the freed slot surfaces the account statement.
     { label: "Statements", icon: FileText, route: "/statement" },
-    // Approvers get Approve; everyone else (Members) gets Share-out in its place.
+    // Approvers get Approve; everyone else (Members) gets Share-out in its
+    // place — unless every group they are in gives toward projects, which
+    // never share out at all.
     ...(canApprove
       ? [{ label: "Approve", icon: CheckSquare, route: "/approvals", badge: pendingApprovals }]
-      : [{ label: "Share-out", icon: Gift, route: shareOutRoute }]),
+      : projectFundOnly
+        ? []
+        : [{ label: "Share-out", icon: Gift, route: shareOutRoute }]),
   ];
 
   return (

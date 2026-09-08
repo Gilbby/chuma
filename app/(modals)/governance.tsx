@@ -18,7 +18,7 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { getGroups } from "@/src/services/groups";
 import { getCurrentUser } from "@/src/utils/currentUser";
 import { formatZMW } from "@/src/utils/currency";
-import { Group, Member, Role } from "@/src/types";
+import { Group, Member, Role, isProjectFundType } from "@/src/types";
 import { Crown, Shield, FileText, Vote } from "lucide-react-native";
 import { useAsyncEffect } from "@/src/hooks/useAsyncEffect";
 
@@ -149,15 +149,33 @@ export default function Governance() {
     (m: Member) => m.status !== "pending" && ADMIN_ROLES.includes(m.role)
   );
 
-  const savingRules: Row[] = [
-    {
-      label: "Contribution",
-      value: `${formatZMW(group.contributionAmount)} ${(group.contributionFrequency || "").toLowerCase()}`.trim(),
-    },
-    { label: "Late contribution", value: penaltyLabel(c?.penaltyRules?.lateContribution) },
-    { label: "Grace period", value: c ? `${c.gracePeriodDays} days` : "Not set" },
-    { label: "Share-out", value: fmtDate(group.shareOutDate) },
-  ];
+  // A project-fund group (church) has no schedule, no dues and no share-out —
+  // what it has is the projects members give toward.
+  const projectFund = isProjectFundType(group.groupType);
+  const openProjects = (group.projects ?? []).filter((p) => p.status === "active");
+
+  const savingRules: Row[] = projectFund
+    ? [
+        { label: "Giving", value: "Any amount, any time" },
+        {
+          label: "Open projects",
+          value:
+            openProjects.length === 0
+              ? "None yet"
+              : openProjects.map((p) => p.name).join(", "),
+        },
+        { label: "Who adds projects", value: "Chairperson" },
+        { label: "Late contribution", value: "No penalties" },
+      ]
+    : [
+        {
+          label: "Contribution",
+          value: `${formatZMW(group.contributionAmount)} ${(group.contributionFrequency || "").toLowerCase()}`.trim(),
+        },
+        { label: "Late contribution", value: penaltyLabel(c?.penaltyRules?.lateContribution) },
+        { label: "Grace period", value: c ? `${c.gracePeriodDays} days` : "Not set" },
+        { label: "Share-out", value: fmtDate(group.shareOutDate) },
+      ];
 
   const loanRules: Row[] = lends
     ? [
@@ -252,8 +270,9 @@ export default function Governance() {
             </Text>
             <Card padding={16}>
               <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 20 }}>
-                This group saves together without lending. Everything members put in is paid back
-                out at share-out.
+                {projectFund
+                  ? "This group does not lend. Everything given goes toward the project it was given for."
+                  : "This group saves together without lending. Everything members put in is paid back out at share-out."}
               </Text>
             </Card>
           </>
